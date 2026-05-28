@@ -8,6 +8,7 @@ from fastapi.templating import Jinja2Templates
 from starlette.requests import Request
 
 import db
+import network
 import scanner
 from config import SCAN_SUBNET
 
@@ -66,3 +67,8 @@ def get_scan(scan_id: int):
 @app.get("/api/scans")
 def list_scans():
     return db.list_scans()
+
+
+@app.get("/api/network/check")
+def network_check():
+    return network.run_all()

@@ -42,6 +42,7 @@ OPTIONS = {
         "db",
         "scanner",
         "fingerprint",
+        "network",
         "netaudit_launcher",
         "anyio._backends._asyncio",
         "asyncio",

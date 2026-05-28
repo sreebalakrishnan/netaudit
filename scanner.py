@@ -45,10 +45,14 @@ def resolve_subnet(subnet: str) -> ipaddress.IPv4Network:
     return ipaddress.IPv4Network(subnet, strict=False)
 
 
+PING = "/sbin/ping"
+ARP = "/usr/sbin/arp"
+
+
 def _ping(ip: str) -> bool:
     try:
         r = subprocess.run(
-            ["ping", "-c", "1", "-W", "300", ip],
+            [PING, "-c", "1", "-W", "300", ip],
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=2,
         )
         return r.returncode == 0
@@ -71,7 +75,7 @@ _ARP_RE = re.compile(r"\((?P<ip>\d+\.\d+\.\d+\.\d+)\) at (?P<mac>[0-9a-fA-F:]{11
 
 def read_arp_table() -> dict[str, str]:
     try:
-        out = subprocess.check_output(["arp", "-a"], text=True, timeout=5)
+        out = subprocess.check_output([ARP, "-a"], text=True, timeout=5)
     except Exception:
         return {}
     table: dict[str, str] = {}

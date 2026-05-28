@@ -46,6 +46,22 @@
   .scan-meta { display: flex; gap: 10px; align-items: center; }
   .scan-meta .id { color: var(--muted); font-family: "SF Mono", monospace; }
 
+  /* Safety strip */
+  .safety { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; margin-bottom: 16px; }
+  .tile { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; display: flex; gap: 12px; align-items: flex-start; }
+  .tile .icon { font-size: 22px; line-height: 1; flex-shrink: 0; }
+  .tile .label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); font-weight: 600; }
+  .tile .value { font-size: 14px; font-weight: 600; margin-top: 2px; line-height: 1.2; word-break: break-word; }
+  .tile .sub { font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .tile.ok { border-color: rgba(110, 231, 183, 0.4); }
+  .tile.warn { border-color: rgba(251, 191, 36, 0.5); }
+  .tile.danger { border-color: rgba(248, 113, 113, 0.5); }
+  .tile .badge { display: inline-block; font-size: 10px; padding: 1px 6px; border-radius: 4px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; margin-left: 4px; }
+  .tile.ok .badge { background: rgba(110, 231, 183, 0.15); color: var(--accent); }
+  .tile.warn .badge { background: rgba(251, 191, 36, 0.15); color: var(--warn); }
+  .tile.danger .badge { background: rgba(248, 113, 113, 0.15); color: var(--danger); }
+  .skeleton { color: var(--muted-2); }
+
   /* Stats strip */
   .stats { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
   .stat { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px; display: flex; align-items: center; gap: 10px; cursor: pointer; transition: border-color .15s, background .15s; user-select: none; }
@@ -87,8 +103,13 @@
 </header>
 <main>
   <div class="row">
-    <button id="scan-btn">▶ Start Scan</button>
+    <button id="scan-btn">▶ Scan Devices</button>
+    <button id="safety-btn" style="background: var(--panel-2); color: var(--text); border: 1px solid var(--border-2);">⟳ Check Network</button>
     <span class="status" id="meta"></span>
+  </div>
+
+  <div id="safety-wrap">
+    <div class="safety" id="safety"></div>
   </div>
 
   <div class="panel">
@@ -237,6 +258,115 @@ async function refreshScans() {
   renderScans(scans);
 }
 
+function tile(severity, icon, label, value, sub, badge) {
+  const sevClass = severity || '';
+  const badgeHtml = badge ? `<span class="badge">${badge}</span>` : '';
+  const subHtml = sub ? `<div class="sub">${sub}</div>` : '';
+  return `<div class="tile ${sevClass}">
+    <div class="icon">${icon}</div>
+    <div>
+      <div class="label">${label}${badgeHtml}</div>
+      <div class="value">${value}</div>
+      ${subHtml}
+    </div>
+  </div>`;
+}
+
+function renderSafety(n) {
+  const c = $('safety');
+  const tiles = [];
+
+  // Wi-Fi
+  if (n.wifi) {
+    const enc = n.wifi.encryption || 'Unknown';
+    const ssid = n.wifi.ssid && n.wifi.ssid !== '<redacted>' ? n.wifi.ssid : 'Current network';
+    const isOpen = /open|none/i.test(enc);
+    const isWeak = /wep|wpa[^23]/i.test(enc);
+    const sev = isOpen ? 'danger' : isWeak ? 'warn' : 'ok';
+    const badge = isOpen ? 'OPEN' : isWeak ? 'WEAK' : 'OK';
+    tiles.push(tile(sev, '📶', 'Wi-Fi', ssid, `${enc}${n.wifi.rssi ? ' · ' + n.wifi.rssi.split(' / ')[0] : ''}`, badge));
+  }
+
+  // Captive portal
+  if (n.captive_portal) {
+    const s = n.captive_portal.status;
+    if (s === 'open') tiles.push(tile('ok', '🌐', 'Internet', 'Open', n.captive_portal.note, 'OK'));
+    else if (s === 'captive') tiles.push(tile('warn', '🚧', 'Internet', 'Captive portal', 'Sign-in required', 'PORTAL'));
+    else tiles.push(tile('danger', '🚫', 'Internet', 'No outbound', n.captive_portal.note, 'OFFLINE'));
+  }
+
+  // Public IP / geo
+  if (n.public) {
+    if (n.public.ip) {
+      const loc = [n.public.city, n.public.country].filter(Boolean).join(', ');
+      tiles.push(tile('', '🌍', 'Public IP', n.public.ip, `${loc}${n.public.org ? ' · ' + n.public.org.split(' ').slice(0, 3).join(' ') : ''}`));
+    } else {
+      tiles.push(tile('warn', '🌍', 'Public IP', 'Unknown', n.public.error || ''));
+    }
+  }
+
+  // DNS
+  if (n.dns) {
+    const cls = n.dns.classification || {};
+    const sevMap = { 'public': 'ok', 'gateway': 'ok', 'private-other': 'warn', 'external': 'warn', 'unknown': '' };
+    const sev = sevMap[cls.status] || '';
+    const primary = n.dns.resolvers[0] || '—';
+    tiles.push(tile(sev, '🧭', 'DNS', primary, cls.note || ''));
+  }
+
+  // Speed
+  if (n.speed) {
+    if (n.speed.down_mbps != null) {
+      const sev = n.speed.down_mbps < 5 ? 'warn' : 'ok';
+      tiles.push(tile(sev, '⚡', 'Download', `${n.speed.down_mbps} Mbps`, `${(n.speed.bytes/1e6).toFixed(1)} MB in ${n.speed.elapsed_s}s`));
+    } else {
+      tiles.push(tile('warn', '⚡', 'Download', 'Failed', n.speed.error || ''));
+    }
+  }
+
+  // Latency
+  if (n.latency) {
+    const inet = n.latency.internet || {};
+    const gw = n.latency.gateway || {};
+    if (inet.avg_ms != null) {
+      const sev = inet.avg_ms > 200 ? 'warn' : 'ok';
+      const gwLine = gw.avg_ms != null ? ` · gw ${gw.avg_ms.toFixed(0)}ms` : '';
+      tiles.push(tile(sev, '📡', 'Latency', `${inet.avg_ms.toFixed(0)} ms`, `to 1.1.1.1${gwLine}`));
+    }
+  }
+
+  // ARP anomaly
+  if (n.arp_check) {
+    const sev = n.arp_check.severity === 'warn' ? 'warn' : 'ok';
+    const findings = n.arp_check.findings || [];
+    const summary = sev === 'ok' ? 'No anomalies' : `${findings.length} flagged`;
+    tiles.push(tile(sev, sev === 'ok' ? '🛡️' : '⚠️', 'ARP check', summary, findings[0] || ''));
+  }
+
+  c.innerHTML = tiles.join('') || '<div class="empty">Loading network safety…</div>';
+}
+
+function renderSafetySkeleton() {
+  $('safety').innerHTML = Array(6).fill(0).map(() => `
+    <div class="tile">
+      <div class="icon skeleton">⏳</div>
+      <div><div class="label">checking…</div><div class="value skeleton">—</div></div>
+    </div>`).join('');
+}
+
+async function refreshSafety() {
+  $('safety-btn').disabled = true;
+  renderSafetySkeleton();
+  try {
+    const n = await api('/api/network/check');
+    renderSafety(n);
+  } catch (e) {
+    $('safety').innerHTML = `<div class="empty">Safety check failed: ${e.message}</div>`;
+  } finally {
+    $('safety-btn').disabled = false;
+  }
+}
+
 async function selectScan(id) {
   currentScanId = id;
   const s = await api(`/api/scan/${id}`);
@@ -259,6 +389,7 @@ async function selectScan(id) {
 
 $('scan-btn').onclick = async () => {
   $('scan-btn').disabled = true;
+  refreshSafety();  // run safety in parallel with the device scan
   try {
     const { scan_id } = await api('/api/scan', { method: 'POST' });
     activeFilter = null;
@@ -268,7 +399,10 @@ $('scan-btn').onclick = async () => {
   }
 };
 
+$('safety-btn').onclick = refreshSafety;
+
 refreshScans();
+refreshSafety();
 </script>
 </body>
 </html>

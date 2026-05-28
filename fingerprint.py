@@ -325,7 +325,7 @@ def _result(device_type: str, brand: str | None, model: str | None, confidence: 
 def detect_gateway() -> str | None:
     """Get the default route's gateway IP (macOS)."""
     try:
-        out = subprocess.check_output(["route", "-n", "get", "default"], text=True, timeout=2)
+        out = subprocess.check_output(["/sbin/route", "-n", "get", "default"], text=True, timeout=2)
         for line in out.splitlines():
             line = line.strip()
             if line.startswith("gateway:"):
