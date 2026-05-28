@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>NetAudit</title>
+<style>
+  :root {
+    --bg: #0b0d10;
+    --panel: #14171c;
+    --panel-2: #1a1f26;
+    --border: #232932;
+    --text: #e6e8eb;
+    --muted: #8a93a0;
+    --accent: #6ee7b7;
+    --accent-2: #34d399;
+    --danger: #f87171;
+    --warn: #fbbf24;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); font: 14px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif; }
+  header { padding: 28px 32px 16px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--border); }
+  header h1 { margin: 0; font-size: 18px; font-weight: 600; letter-spacing: -0.01em; }
+  header h1 span { color: var(--accent); }
+  main { padding: 24px 32px 48px; max-width: 1100px; margin: 0 auto; }
+  .row { display: flex; gap: 12px; align-items: center; margin-bottom: 16px; flex-wrap: wrap; }
+  button { background: var(--accent); color: #062019; border: 0; padding: 10px 18px; border-radius: 8px; font-weight: 600; font-size: 13px; cursor: pointer; transition: background .15s; }
+  button:hover:not(:disabled) { background: var(--accent-2); }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 20px; margin-bottom: 16px; }
+  .panel h2 { margin: 0 0 12px; font-size: 13px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); font-weight: 600; }
+  .status { display: inline-flex; gap: 8px; align-items: center; font-size: 13px; color: var(--muted); }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+  .dot.running { background: var(--warn); animation: pulse 1.2s infinite; }
+  .dot.done { background: var(--accent); }
+  .dot.error { background: var(--danger); }
+  @keyframes pulse { 50% { opacity: 0.4; } }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); font-size: 13px; }
+  th { color: var(--muted); font-weight: 500; text-transform: uppercase; font-size: 11px; letter-spacing: 0.05em; }
+  tr:last-child td { border-bottom: 0; }
+  td.mono { font-family: "SF Mono", ui-monospace, Menlo, monospace; font-size: 12px; color: var(--text); }
+  td.muted { color: var(--muted); }
+  .empty { padding: 40px; text-align: center; color: var(--muted); }
+  .scans { display: flex; flex-direction: column; gap: 8px; }
+  .scan-row { display: flex; justify-content: space-between; padding: 10px 12px; border-radius: 8px; background: var(--panel-2); border: 1px solid transparent; cursor: pointer; transition: border-color .15s; }
+  .scan-row:hover { border-color: var(--border); }
+  .scan-row.active { border-color: var(--accent); }
+  .scan-meta { display: flex; gap: 12px; align-items: center; }
+  .scan-meta .id { color: var(--muted); font-size: 12px; font-family: "SF Mono", monospace; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Net<span>Audit</span></h1>
+  <div class="status" id="status"><span class="dot"></span><span id="status-text">idle</span></div>
+</header>
+<main>
+  <div class="row">
+    <button id="scan-btn">▶ Start Scan</button>
+    <span class="status" id="meta"></span>
+  </div>
+
+  <div class="panel">
+    <h2>Recent scans</h2>
+    <div class="scans" id="scans"></div>
+  </div>
+
+  <div class="panel">
+    <h2>Devices</h2>
+    <div id="devices-wrap">
+      <div class="empty">No scan selected.</div>
+    </div>
+  </div>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let currentScanId = null;
+let pollTimer = null;
+
+async function api(path, opts = {}) {
+  const r = await fetch(path, opts);
+  if (!r.ok) throw new Error(`${r.status} ${path}`);
+  return r.json();
+}
+
+function setStatus(state, text) {
+  const dot = $('status').querySelector('.dot');
+  dot.className = 'dot ' + (state || '');
+  $('status-text').textContent = text;
+}
+
+function renderScans(scans) {
+  const c = $('scans');
+  if (!scans.length) { c.innerHTML = '<div class="empty">No scans yet.</div>'; return; }
+  c.innerHTML = scans.map(s => `
+    <div class="scan-row ${s.id === currentScanId ? 'active' : ''}" data-id="${s.id}">
+      <div class="scan-meta">
+        <span class="dot ${s.status === 'done' ? 'done' : s.status === 'running' ? 'running' : 'error'}"></span>
+        <span class="id">#${s.id}</span>
+        <span>${new Date(s.started_at).toLocaleString()}</span>
+      </div>
+      <div class="scan-meta">
+        <span class="muted">${s.subnet}</span>
+        <strong>${s.device_count}</strong>
+      </div>
+    </div>
+  `).join('');
+  c.querySelectorAll('.scan-row').forEach(el => {
+    el.onclick = () => selectScan(parseInt(el.dataset.id, 10));
+  });
+}
+
+function renderDevices(devices) {
+  const c = $('devices-wrap');
+  if (!devices || !devices.length) { c.innerHTML = '<div class="empty">No devices.</div>'; return; }
+  c.innerHTML = `<table>
+    <thead><tr><th>IP</th><th>MAC</th><th>Hostname</th><th>Vendor</th></tr></thead>
+    <tbody>${devices.map(d => `
+      <tr>
+        <td class="mono">${d.ip}</td>
+        <td class="mono">${d.mac || '—'}</td>
+        <td>${d.hostname || '<span class="muted">—</span>'}</td>
+        <td>${d.vendor || '<span class="muted">—</span>'}</td>
+      </tr>`).join('')}</tbody>
+  </table>`;
+}
+
+async function refreshScans() {
+  const scans = await api('/api/scans');
+  renderScans(scans);
+}
+
+async function selectScan(id) {
+  currentScanId = id;
+  const s = await api(`/api/scan/${id}`);
+  renderDevices(s.devices);
+  refreshScans();
+  if (s.status === 'running') {
+    setStatus('running', `scan #${id} running…`);
+    clearTimeout(pollTimer);
+    pollTimer = setTimeout(() => selectScan(id), 2000);
+  } else if (s.status === 'done') {
+    setStatus('done', `scan #${id} complete · ${s.device_count} devices`);
+  } else {
+    setStatus('error', s.status);
+  }
+}
+
+$('scan-btn').onclick = async () => {
+  $('scan-btn').disabled = true;
+  try {
+    const { scan_id } = await api('/api/scan', { method: 'POST' });
+    await selectScan(scan_id);
+  } finally {
+    $('scan-btn').disabled = false;
+  }
+};
+
+refreshScans();
+</script>
+</body>
+</html>
