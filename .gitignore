@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.eggs/
+
+# Virtual envs
+venv/
+venv_build/
+venv_pyinstaller/
+.venv/
+env/
+
+# Build artifacts
+build/
+dist/
+*.dmg
+*.app
+
+# Env / secrets
+.env
+.env.local
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Editors
+.idea/
+.vscode/
+*.swp
+*~
+
+# Logs / runtime
+*.log
+~/.netaudit/
