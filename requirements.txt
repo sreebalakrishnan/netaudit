@@ -5,6 +5,7 @@ pydantic==2.9.2
 python-dotenv==1.0.1
 psutil==6.0.0
 mac-vendor-lookup==0.1.12
+zeroconf==0.149.16
 
 # Build-time only (Mac .app packaging)
 # py2app 0.28.10 needs pkg_resources, which setuptools removed in 81+

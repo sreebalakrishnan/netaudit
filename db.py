@@ -1,3 +1,4 @@
+import json
 import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -21,6 +22,13 @@ CREATE TABLE IF NOT EXISTS devices (
     mac TEXT,
     hostname TEXT,
     vendor TEXT,
+    device_type TEXT,
+    brand TEXT,
+    model TEXT,
+    confidence TEXT,
+    services TEXT,
+    open_ports TEXT,
+    ssdp TEXT,
     UNIQUE(scan_id, ip)
 );
 
@@ -28,10 +36,25 @@ CREATE INDEX IF NOT EXISTS idx_devices_scan ON devices(scan_id);
 CREATE INDEX IF NOT EXISTS idx_scans_started ON scans(started_at DESC);
 """
 
+# Columns added after v0.1 — idempotent ALTERs
+_NEW_COLUMNS = [
+    ("device_type", "TEXT"),
+    ("brand", "TEXT"),
+    ("model", "TEXT"),
+    ("confidence", "TEXT"),
+    ("services", "TEXT"),
+    ("open_ports", "TEXT"),
+    ("ssdp", "TEXT"),
+]
+
 
 def init():
     with connect() as con:
         con.executescript(SCHEMA)
+        existing = {r["name"] for r in con.execute("PRAGMA table_info(devices)").fetchall()}
+        for col, typ in _NEW_COLUMNS:
+            if col not in existing:
+                con.execute(f"ALTER TABLE devices ADD COLUMN {col} {typ}")
 
 
 @contextmanager
@@ -71,10 +94,20 @@ def insert_devices(scan_id: int, devices: list[dict]):
         return
     with connect() as con:
         con.executemany(
-            """INSERT OR REPLACE INTO devices (scan_id, ip, mac, hostname, vendor)
-               VALUES (?, ?, ?, ?, ?)""",
+            """INSERT OR REPLACE INTO devices
+               (scan_id, ip, mac, hostname, vendor, device_type, brand, model,
+                confidence, services, open_ports, ssdp)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             [
-                (scan_id, d.get("ip"), d.get("mac"), d.get("hostname"), d.get("vendor"))
+                (
+                    scan_id,
+                    d.get("ip"), d.get("mac"), d.get("hostname"), d.get("vendor"),
+                    d.get("device_type"), d.get("brand"), d.get("model"),
+                    d.get("confidence"),
+                    json.dumps(d.get("services") or []),
+                    json.dumps(d.get("open_ports") or []),
+                    json.dumps(d.get("ssdp") or []),
+                )
                 for d in devices
             ],
         )
@@ -97,7 +130,16 @@ def list_scans(limit: int = 20) -> list[dict]:
 def get_devices(scan_id: int) -> list[dict]:
     with connect() as con:
         rows = con.execute(
-            "SELECT ip, mac, hostname, vendor FROM devices WHERE scan_id = ? ORDER BY ip",
+            """SELECT ip, mac, hostname, vendor, device_type, brand, model,
+                      confidence, services, open_ports, ssdp
+               FROM devices WHERE scan_id = ? ORDER BY ip""",
             (scan_id,),
         ).fetchall()
-        return [dict(r) for r in rows]
+        out = []
+        for r in rows:
+            d = dict(r)
+            for k in ("services", "open_ports", "ssdp"):
+                try: d[k] = json.loads(d[k]) if d[k] else []
+                except Exception: d[k] = []
+            out.append(d)
+        return out

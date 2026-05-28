@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import ipaddress
 import re
 import socket
@@ -5,6 +7,9 @@ import subprocess
 from concurrent.futures import ThreadPoolExecutor
 
 import psutil
+
+import fingerprint
+from fingerprint import Signals
 
 try:
     from mac_vendor_lookup import MacLookup
@@ -28,7 +33,6 @@ def detect_subnet() -> str:
                 continue
             netmask = snic.netmask or "255.255.255.0"
             net = ipaddress.IPv4Network(f"{ip}/{netmask}", strict=False)
-            # Cap to /24 to keep scans fast
             if net.prefixlen < 24:
                 net = ipaddress.IPv4Network(f"{ip}/24", strict=False)
             return str(net)
@@ -45,9 +49,7 @@ def _ping(ip: str) -> bool:
     try:
         r = subprocess.run(
             ["ping", "-c", "1", "-W", "300", ip],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            timeout=2,
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=2,
         )
         return r.returncode == 0
     except Exception:
@@ -64,13 +66,10 @@ def ping_sweep(network: ipaddress.IPv4Network, workers: int = 64) -> set[str]:
     return alive
 
 
-_ARP_RE = re.compile(
-    r"\((?P<ip>\d+\.\d+\.\d+\.\d+)\) at (?P<mac>[0-9a-fA-F:]{11,17})"
-)
+_ARP_RE = re.compile(r"\((?P<ip>\d+\.\d+\.\d+\.\d+)\) at (?P<mac>[0-9a-fA-F:]{11,17})")
 
 
 def read_arp_table() -> dict[str, str]:
-    """Return {ip: mac} from `arp -a` output."""
     try:
         out = subprocess.check_output(["arp", "-a"], text=True, timeout=5)
     except Exception:
@@ -83,7 +82,6 @@ def read_arp_table() -> dict[str, str]:
         mac = m.group("mac")
         if mac in ("(incomplete)", "ff:ff:ff:ff:ff:ff"):
             continue
-        # Normalize MAC: pad single-digit octets, lowercase
         parts = [p.zfill(2) for p in mac.split(":")]
         table[m.group("ip")] = ":".join(parts).lower()
     return table
@@ -91,6 +89,8 @@ def read_arp_table() -> dict[str, str]:
 
 def resolve_hostname(ip: str) -> str | None:
     try:
+        # Short timeout — many devices won't reverse-resolve
+        socket.setdefaulttimeout(2.0)
         return socket.gethostbyaddr(ip)[0]
     except Exception:
         return None
@@ -105,25 +105,64 @@ def vendor_for_mac(mac: str | None) -> str | None:
         return None
 
 
+def _merge_signals(*sources: dict[str, Signals]) -> dict[str, Signals]:
+    merged: dict[str, Signals] = {}
+    for src in sources:
+        for ip, sig in src.items():
+            cur = merged.setdefault(ip, Signals())
+            cur.services |= sig.services
+            cur.mdns_hostnames |= sig.mdns_hostnames
+            cur.ssdp_servers |= sig.ssdp_servers
+            cur.open_ports |= sig.open_ports
+    return merged
+
+
 def scan(subnet: str = "auto") -> tuple[str, list[dict]]:
-    """Run a full scan. Returns (resolved subnet string, device list)."""
+    """Run a full scan with fingerprinting. Returns (subnet, devices)."""
     network = resolve_subnet(subnet)
-    alive = ping_sweep(network)
+    gateway = fingerprint.detect_gateway()
+
+    # Run mDNS + SSDP discovery in parallel with the ping sweep
+    with ThreadPoolExecutor(max_workers=3) as ex:
+        fut_mdns = ex.submit(fingerprint.discover_mdns, 5.0)
+        fut_ssdp = ex.submit(fingerprint.discover_ssdp, 3.0)
+        fut_alive = ex.submit(ping_sweep, network)
+        mdns_sig = fut_mdns.result()
+        ssdp_sig = fut_ssdp.result()
+        alive = fut_alive.result()
+
     arp = read_arp_table()
+    ips = (alive | set(arp.keys()) | set(mdns_sig.keys()) | set(ssdp_sig.keys()))
+    ips = {ip for ip in ips if ipaddress.IPv4Address(ip) in network}
 
-    ips = alive | set(arp.keys())
-    devices: list[dict] = []
-    with ThreadPoolExecutor(max_workers=32) as ex:
+    # Hostnames + per-host port probes in parallel
+    with ThreadPoolExecutor(max_workers=16) as ex:
         hostnames = dict(zip(ips, ex.map(resolve_hostname, ips)))
+        port_results = dict(zip(ips, ex.map(fingerprint.probe_ports, ips)))
 
+    # Build port signals into the merge
+    port_sig = {ip: Signals(open_ports=ports) for ip, ports in port_results.items()}
+    signals = _merge_signals(mdns_sig, ssdp_sig, port_sig)
+
+    devices: list[dict] = []
     for ip in sorted(ips, key=lambda s: tuple(int(o) for o in s.split("."))):
-        if ipaddress.IPv4Address(ip) not in network:
-            continue
         mac = arp.get(ip)
+        sig = signals.get(ip, Signals())
+        info = fingerprint.classify(
+            ip=ip, mac=mac, hostname=hostnames.get(ip),
+            vendor=vendor_for_mac(mac), signals=sig, gateway_ip=gateway,
+        )
         devices.append({
             "ip": ip,
             "mac": mac,
-            "hostname": hostnames.get(ip),
+            "hostname": hostnames.get(ip) or (next(iter(sig.mdns_hostnames), None)),
             "vendor": vendor_for_mac(mac),
+            "device_type": info["device_type"],
+            "brand": info["brand"],
+            "model": info["model"],
+            "confidence": info["confidence"],
+            "services": sorted(sig.services),
+            "open_ports": sorted(sig.open_ports),
+            "ssdp": sorted(sig.ssdp_servers)[:3],
         })
     return str(network), devices
