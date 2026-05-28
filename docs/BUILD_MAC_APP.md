@@ -29,7 +29,7 @@ Output: **`dist/NetAudit.app`** (~150-200 MB)
 ### Step 1: Prepare Environment
 
 ```bash
-cd /home/claude/netaudit
+cd /Users/sreeb/Developer/netaudit
 
 # Create fresh virtual environment
 python3 -m venv venv_build
@@ -214,7 +214,7 @@ python setup.py py2app
 
 The build must be run from project root:
 ```bash
-cd /home/claude/netaudit
+cd /Users/sreeb/Developer/netaudit
 python setup.py py2app
 ```
 
@@ -351,7 +351,7 @@ Save this as `build.sh`:
 #!/bin/bash
 set -e
 
-cd /home/claude/netaudit
+cd /Users/sreeb/Developer/netaudit
 
 echo "🏗️  Building NetAudit.app..."
 
@@ -411,7 +411,7 @@ This requires an Apple Developer account. For now, personal use is fine without 
 ## Reference: Full Build Checklist
 
 - [ ] Python 3.9+ installed
-- [ ] In project root: `/home/claude/netaudit/`
+- [ ] In project root: `/Users/sreeb/Developer/netaudit/`
 - [ ] Create venv: `python3 -m venv venv_build`
 - [ ] Activate: `source venv_build/bin/activate`
 - [ ] Install: `pip install -r requirements.txt`
@@ -424,7 +424,7 @@ This requires an Apple Developer account. For now, personal use is fine without 
 **Ready to build?**
 
 ```bash
-cd /home/claude/netaudit
+cd /Users/sreeb/Developer/netaudit
 source venv_build/bin/activate
 python setup.py py2app
 ```

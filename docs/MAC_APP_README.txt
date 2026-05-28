@@ -26,7 +26,7 @@ QUICK START (5 MINUTES)
 3. Open: BUILD_MAC_APP.md (detailed py2app instructions)
 4. Execute:
 
-   cd /home/claude/netaudit
+   cd /Users/sreeb/Developer/netaudit
    python3 -m venv venv_build
    source venv_build/bin/activate
    pip install -r requirements.txt
@@ -290,7 +290,7 @@ TROUBLESHOOTING
   → pip install py2app
 
 "Build fails / templates not found"
-  → Run from project root: cd /home/claude/netaudit
+  → Run from project root: cd /Users/sreeb/Developer/netaudit
 
 "App won't launch"
   → Run: open -a NetAudit --args
@@ -341,7 +341,7 @@ COMMAND CHEAT SHEET
 ════════════════════
 
 # One-liner for complete build
-cd /home/claude/netaudit && \
+cd /Users/sreeb/Developer/netaudit && \
 python3 -m venv venv_build && \
 source venv_build/bin/activate && \
 pip install -r requirements.txt && \

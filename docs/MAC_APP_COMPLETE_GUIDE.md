@@ -49,7 +49,7 @@ User's Mac
 **Most native Mac experience**
 
 ```bash
-cd /home/claude/netaudit
+cd /Users/sreeb/Developer/netaudit
 
 # Create build environment
 python3 -m venv venv_build
@@ -75,7 +75,7 @@ python setup.py py2app
 **Quicker alternative, slightly less native**
 
 ```bash
-cd /home/claude/netaudit
+cd /Users/sreeb/Developer/netaudit
 
 python3 -m venv venv_pyinstaller
 source venv_pyinstaller/bin/activate
@@ -114,7 +114,7 @@ pyinstaller --onedir --windowed --name=NetAudit --add-data="templates:templates"
 
 ### 1. Prepare
 ```bash
-cd /home/claude/netaudit
+cd /Users/sreeb/Developer/netaudit
 
 python3 -m venv venv_build
 source venv_build/bin/activate
@@ -304,7 +304,7 @@ These are **optional** for personal use. Required only for public distribution.
 | Problem | Solution |
 |---------|----------|
 | "py2app not found" | `pip install py2app` in active venv |
-| Build fails | Run from project root: `cd /home/claude/netaudit` |
+| Build fails | Run from project root: `cd /Users/sreeb/Developer/netaudit` |
 | App won't launch | Check error: `open -a NetAudit --args` |
 | Port 8000 in use | Edit `.env`: `API_PORT=8001` |
 | Database missing | Create dir: `mkdir -p ~/.netaudit` |
@@ -426,7 +426,7 @@ After building:
 
 ```bash
 # Full build process
-cd /home/claude/netaudit
+cd /Users/sreeb/Developer/netaudit
 python3 -m venv venv_build
 source venv_build/bin/activate
 pip install -r requirements.txt
