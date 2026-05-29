@@ -163,7 +163,9 @@ def check_captive_portal() -> dict:
 
 # ---------- Latency ----------
 
-_PING_AVG_RE = re.compile(r"min/avg/max(?:/stddev)? = [\d.]+/([\d.]+)/")
+_PING_STATS_RE = re.compile(
+    r"min/avg/max(?:/stddev)? = ([\d.]+)/([\d.]+)/([\d.]+)(?:/([\d.]+))?"
+)
 
 
 def ping_latency(host: str, count: int = 4) -> dict:
@@ -179,10 +181,11 @@ def ping_latency(host: str, count: int = 4) -> dict:
     except Exception as e:
         return {"host": host, "error": str(e)}
     loss_match = re.search(r"(\d+(?:\.\d+)?)% packet loss", out)
-    avg_match = _PING_AVG_RE.search(out)
+    stats = _PING_STATS_RE.search(out)
     return {
         "host": host,
-        "avg_ms": float(avg_match.group(1)) if avg_match else None,
+        "avg_ms": float(stats.group(2)) if stats else None,
+        "jitter_ms": float(stats.group(4)) if stats and stats.group(4) else None,
         "loss_pct": float(loss_match.group(1)) if loss_match else None,
     }
 
@@ -265,6 +268,104 @@ def arp_anomalies(arp_table: dict[str, str], gateway: str | None) -> dict:
     }
 
 
+# ---------- Verdict ----------
+
+def summarize(data: dict) -> dict:
+    """Roll the raw safety signals into a plain-English verdict.
+
+    Returns {severity, headline, sentences, ssid} — UI shows this as a
+    big headline tile above the technical signal tiles.
+    """
+    danger: list[str] = []
+    warn: list[str] = []
+    good: list[str] = []
+
+    # ---- Encryption ----
+    wifi = data.get("wifi") or {}
+    enc = (wifi.get("encryption") or "").lower()
+    if not enc:
+        warn.append("Couldn't read the Wi-Fi encryption — verify before signing into anything.")
+    elif "open" in enc or "none" in enc:
+        danger.append("No password on this network — anyone nearby can see your traffic.")
+    elif "wep" in enc or enc.startswith("wpa ") or enc == "wpa personal":
+        warn.append("Older Wi-Fi encryption — okay for browsing, avoid sensitive accounts without a VPN.")
+    else:
+        good.append("Encrypted Wi-Fi.")
+
+    # ---- Internet / captive portal ----
+    portal = data.get("captive_portal") or {}
+    ps = portal.get("status")
+    if ps == "captive":
+        warn.append("Sign-in page is in the way — log in first, then re-check.")
+    elif ps == "no-internet":
+        danger.append("No internet reaching out — you're connected but offline.")
+
+    # ---- ARP / tampering ----
+    arp = data.get("arp_check") or {}
+    if arp.get("severity") == "warn":
+        first = (arp.get("findings") or [""])[0]
+        if "locally-administered" in first:
+            danger.append("The gateway's MAC looks fake — possibly a rogue access point.")
+        else:
+            danger.append("Network tampering signs detected — avoid logging into sensitive accounts.")
+    else:
+        good.append("No tampering signs.")
+
+    # ---- DNS ----
+    dns = (data.get("dns") or {}).get("classification") or {}
+    if dns.get("status") in ("private-other", "external"):
+        warn.append("Unusual DNS resolver — could be redirecting where you're going.")
+
+    # ---- Speed ----
+    spd = data.get("speed") or {}
+    mbps = spd.get("down_mbps")
+    if mbps is not None:
+        if mbps < 2:
+            warn.append("Very slow — pages will crawl, video won't work.")
+        elif mbps < 8:
+            good.append("Fine for browsing and SD video.")
+        elif mbps < 25:
+            good.append("Fast enough for HD video.")
+        else:
+            good.append("Plenty fast — 4K and big downloads no problem.")
+
+    # ---- Latency + jitter (call quality) ----
+    inet = (data.get("latency") or {}).get("internet") or {}
+    lat = inet.get("avg_ms")
+    jit = inet.get("jitter_ms")
+    if lat is not None:
+        if lat > 250 or (jit is not None and jit > 40):
+            warn.append("Real-time apps will struggle — calls and games will lag.")
+        elif lat > 120 or (jit is not None and jit > 20):
+            good.append("Okay for calls — minor stutter possible.")
+        else:
+            good.append("Snappy response — calls and games should feel smooth.")
+
+    # ---- Severity rollup ----
+    if danger:
+        severity = "danger"
+        headline = "Be careful on this network."
+    elif warn:
+        severity = "warn"
+        headline = "Mostly fine, with caveats."
+    else:
+        severity = "ok"
+        headline = "This network looks safe."
+
+    # Order: danger > warn > positives — show concerns first
+    sentences = danger + warn + good[:3]
+    ssid = wifi.get("ssid")
+    if ssid in (None, "", "<redacted>"):
+        ssid = None
+
+    return {
+        "severity": severity,
+        "headline": headline,
+        "sentences": sentences[:5],
+        "ssid": ssid,
+    }
+
+
 # ---------- Orchestrator ----------
 
 def _prime_arp(gateway: str | None):
@@ -309,7 +410,7 @@ def run_all() -> dict:
         time.sleep(0.3)
         arp_table = scanner.read_arp_table()
 
-    return {
+    result = {
         "wifi": wifi,
         "gateway": gateway,
         "dns": {
@@ -322,3 +423,5 @@ def run_all() -> dict:
         "speed": speed,
         "arp_check": arp_anomalies(arp_table, gateway),
     }
+    result["verdict"] = summarize(result)
+    return result

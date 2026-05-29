@@ -46,6 +46,22 @@
   .scan-meta { display: flex; gap: 10px; align-items: center; }
   .scan-meta .id { color: var(--muted); font-family: "SF Mono", monospace; }
 
+  /* Verdict headline */
+  .verdict { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 18px 22px; margin-bottom: 12px; border-left: 4px solid var(--muted-2); }
+  .verdict.ok { border-left-color: var(--accent); }
+  .verdict.warn { border-left-color: var(--warn); }
+  .verdict.danger { border-left-color: var(--danger); }
+  .verdict .head { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+  .verdict .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted-2); }
+  .verdict.ok .dot { background: var(--accent); }
+  .verdict.warn .dot { background: var(--warn); }
+  .verdict.danger .dot { background: var(--danger); }
+  .verdict .headline { font-size: 18px; font-weight: 600; letter-spacing: -0.01em; }
+  .verdict .ssid { font-size: 12px; color: var(--muted); margin-left: auto; }
+  .verdict ul { margin: 8px 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; }
+  .verdict li { font-size: 14px; color: var(--text); padding-left: 18px; position: relative; }
+  .verdict li::before { content: '·'; position: absolute; left: 6px; color: var(--muted); font-weight: 700; }
+
   /* Safety strip */
   .safety { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; margin-bottom: 16px; }
   .tile { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; display: flex; gap: 12px; align-items: flex-start; }
@@ -109,6 +125,7 @@
   </div>
 
   <div id="safety-wrap">
+    <div id="verdict-host"></div>
     <div class="safety" id="safety"></div>
   </div>
 
@@ -272,7 +289,22 @@ function tile(severity, icon, label, value, sub, badge) {
   </div>`;
 }
 
+function renderVerdict(v) {
+  const host = $('verdict-host');
+  if (!v) { host.innerHTML = ''; return; }
+  const lis = (v.sentences || []).map(s => `<li>${s}</li>`).join('');
+  host.innerHTML = `<div class="verdict ${v.severity}">
+    <div class="head">
+      <div class="dot"></div>
+      <div class="headline">${v.headline}</div>
+      ${v.ssid ? `<div class="ssid">on "${v.ssid}"</div>` : ''}
+    </div>
+    <ul>${lis}</ul>
+  </div>`;
+}
+
 function renderSafety(n) {
+  renderVerdict(n.verdict);
   const c = $('safety');
   const tiles = [];
 
@@ -324,14 +356,16 @@ function renderSafety(n) {
     }
   }
 
-  // Latency
+  // Latency + jitter
   if (n.latency) {
     const inet = n.latency.internet || {};
     const gw = n.latency.gateway || {};
     if (inet.avg_ms != null) {
-      const sev = inet.avg_ms > 200 ? 'warn' : 'ok';
+      const jit = inet.jitter_ms;
+      const sev = (inet.avg_ms > 250 || (jit != null && jit > 40)) ? 'warn' : 'ok';
       const gwLine = gw.avg_ms != null ? ` · gw ${gw.avg_ms.toFixed(0)}ms` : '';
-      tiles.push(tile(sev, '📡', 'Latency', `${inet.avg_ms.toFixed(0)} ms`, `to 1.1.1.1${gwLine}`));
+      const jitLine = jit != null ? ` · jitter ${jit.toFixed(0)}ms` : '';
+      tiles.push(tile(sev, '📡', 'Latency', `${inet.avg_ms.toFixed(0)} ms`, `to 1.1.1.1${jitLine}${gwLine}`));
     }
   }
 
