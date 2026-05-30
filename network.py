@@ -233,6 +233,80 @@ def speed_test(bytes_to_download: int = 5_000_000) -> dict:
     return {"error": last_err or "all endpoints failed"}
 
 
+# ---------- Traceroute / hops ----------
+
+_HOP_RE = re.compile(r"^\s*(\d+)\s+(\S+)\s+([\d.]+)\s*ms")
+
+
+def traceroute_hops(host: str = "1.1.1.1", max_hops: int = 12) -> dict:
+    """Run a single-probe traceroute, return hop list."""
+    try:
+        out = subprocess.check_output(
+            ["/usr/sbin/traceroute", "-n", "-w", "1", "-q", "1", "-m", str(max_hops), host],
+            text=True, timeout=max_hops + 4, stderr=subprocess.DEVNULL,
+        )
+    except Exception as e:
+        return {"host": host, "error": str(e), "hops": []}
+    hops: list[dict] = []
+    reached = False
+    for line in out.splitlines():
+        m = _HOP_RE.match(line)
+        if m:
+            hop = {"n": int(m.group(1)), "ip": m.group(2), "rtt_ms": float(m.group(3))}
+            hops.append(hop)
+            if hop["ip"] == host:
+                reached = True
+        elif re.match(r"^\s*\d+\s+\*", line):
+            n = int(line.strip().split()[0])
+            hops.append({"n": n, "ip": None, "rtt_ms": None})
+    return {"host": host, "hops": hops, "count": len(hops), "reached": reached}
+
+
+# ---------- VPN detection ----------
+
+VPN_PREFIXES = ("utun", "ppp", "ipsec", "tun", "tap")
+
+
+def detect_vpn() -> dict:
+    """Check the default route's interface — if it's a VPN tunnel, report it."""
+    try:
+        out = subprocess.check_output(
+            ["/sbin/route", "-n", "get", "default"], text=True, timeout=2,
+        )
+    except Exception:
+        return {"active": False, "interface": None}
+    iface = None
+    for line in out.splitlines():
+        s = line.strip()
+        if s.startswith("interface:"):
+            iface = s.split(":", 1)[1].strip()
+            break
+    if iface and iface.startswith(VPN_PREFIXES):
+        return {"active": True, "interface": iface}
+    return {"active": False, "interface": iface}
+
+
+# ---------- Apple Private Relay ----------
+
+def detect_private_relay() -> dict:
+    """Check if iCloud+ Private Relay is reachable from this host.
+
+    PR is per-app (Safari + Mail). We can only detect availability, not
+    whether a given app actually uses it.
+    """
+    try:
+        socket.setdefaulttimeout(2.0)
+        socket.gethostbyname("mask.icloud.com")
+        mask_resolves = True
+    except Exception:
+        mask_resolves = False
+    return {
+        "available": mask_resolves,
+        "note": "Safari and Mail use it when iCloud+ Private Relay is on"
+                if mask_resolves else "Not reachable from this network",
+    }
+
+
 # ---------- ARP-spoof check ----------
 
 def arp_anomalies(arp_table: dict[str, str], gateway: str | None) -> dict:
@@ -341,6 +415,21 @@ def summarize(data: dict) -> dict:
         else:
             good.append("Snappy response — calls and games should feel smooth.")
 
+    # ---- VPN (informational, not a concern) ----
+    vpn = data.get("vpn") or {}
+    if vpn.get("active"):
+        iface = vpn.get("interface") or "tunnel"
+        good.append(f"VPN is on — your traffic exits through a tunnel ({iface}).")
+
+    # ---- Hops (informational unless excessive) ----
+    hops = data.get("hops") or {}
+    n_hops = hops.get("count")
+    if n_hops:
+        if n_hops > 15:
+            warn.append(f"Indirect route to the internet ({n_hops} hops) — could be a transit detour.")
+        elif n_hops <= 6 and hops.get("reached"):
+            good.append(f"Direct route to the internet ({n_hops} hops).")
+
     # ---- Severity rollup ----
     if danger:
         severity = "danger"
@@ -385,7 +474,7 @@ def run_all() -> dict:
     """Run every check in parallel; ~5-7s end-to-end."""
     gateway = get_gateway()
 
-    with ThreadPoolExecutor(max_workers=7) as ex:
+    with ThreadPoolExecutor(max_workers=10) as ex:
         f_wifi = ex.submit(get_wifi_info)
         f_dns = ex.submit(get_dns_resolvers)
         f_pub = ex.submit(get_public_ip)
@@ -393,6 +482,9 @@ def run_all() -> dict:
         f_gw_lat = ex.submit(ping_latency, gateway, 4) if gateway else None
         f_inet_lat = ex.submit(ping_latency, "1.1.1.1", 4)
         f_speed = ex.submit(speed_test, 5_000_000)
+        f_hops = ex.submit(traceroute_hops, "1.1.1.1", 12)
+        f_vpn = ex.submit(detect_vpn)
+        f_pr = ex.submit(detect_private_relay)
 
         wifi = f_wifi.result()
         resolvers = f_dns.result()
@@ -401,6 +493,9 @@ def run_all() -> dict:
         gw_lat = f_gw_lat.result() if f_gw_lat else {"host": None, "error": "no gateway"}
         inet_lat = f_inet_lat.result()
         speed = f_speed.result()
+        hops = f_hops.result()
+        vpn = f_vpn.result()
+        relay = f_pr.result()
 
     # Read ARP AFTER the parallel pings. Retry-with-prime if the gateway
     # didn't make it in (ARP cache can lag behind ping completion).
@@ -422,6 +517,9 @@ def run_all() -> dict:
         "latency": {"gateway": gw_lat, "internet": inet_lat},
         "speed": speed,
         "arp_check": arp_anomalies(arp_table, gateway),
+        "hops": hops,
+        "vpn": vpn,
+        "private_relay": relay,
     }
     result["verdict"] = summarize(result)
     return result

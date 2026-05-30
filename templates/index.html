@@ -377,6 +377,37 @@ function renderSafety(n) {
     tiles.push(tile(sev, sev === 'ok' ? '🛡️' : '⚠️', 'ARP check', summary, findings[0] || ''));
   }
 
+  // Path / hops
+  if (n.hops) {
+    const h = n.hops;
+    if (h.error) {
+      tiles.push(tile('warn', '🛣️', 'Path', 'Trace failed', h.error.substring(0, 40)));
+    } else if (h.count) {
+      const sev = h.count > 15 ? 'warn' : 'ok';
+      const summary = h.reached ? `${h.count} hops` : `${h.count}+ hops`;
+      const sub = h.reached ? 'reached 1.1.1.1' : `to 1.1.1.1 · ICMP filtered after hop ${h.hops.filter(x => x.ip).length}`;
+      tiles.push(tile(sev, '🛣️', 'Path', summary, sub));
+    }
+  }
+
+  // VPN
+  if (n.vpn) {
+    if (n.vpn.active) {
+      tiles.push(tile('ok', '🔒', 'VPN', 'Active', `via ${n.vpn.interface}`, 'ON'));
+    } else {
+      tiles.push(tile('', '🔓', 'VPN', 'Not active', n.vpn.interface ? `default via ${n.vpn.interface}` : ''));
+    }
+  }
+
+  // Apple Private Relay
+  if (n.private_relay) {
+    if (n.private_relay.available) {
+      tiles.push(tile('', '🍎', 'Private Relay', 'Available', n.private_relay.note));
+    } else {
+      tiles.push(tile('', '🍎', 'Private Relay', 'Not detected', n.private_relay.note));
+    }
+  }
+
   c.innerHTML = tiles.join('') || '<div class="empty">Loading network safety…</div>';
 }
 
