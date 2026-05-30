@@ -45,6 +45,7 @@ _NEW_COLUMNS = [
     ("services", "TEXT"),
     ("open_ports", "TEXT"),
     ("ssdp", "TEXT"),
+    ("http_titles", "TEXT"),
 ]
 
 
@@ -96,8 +97,8 @@ def insert_devices(scan_id: int, devices: list[dict]):
         con.executemany(
             """INSERT OR REPLACE INTO devices
                (scan_id, ip, mac, hostname, vendor, device_type, brand, model,
-                confidence, services, open_ports, ssdp)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                confidence, services, open_ports, ssdp, http_titles)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             [
                 (
                     scan_id,
@@ -107,6 +108,7 @@ def insert_devices(scan_id: int, devices: list[dict]):
                     json.dumps(d.get("services") or []),
                     json.dumps(d.get("open_ports") or []),
                     json.dumps(d.get("ssdp") or []),
+                    json.dumps(d.get("http_titles") or []),
                 )
                 for d in devices
             ],
@@ -131,14 +133,14 @@ def get_devices(scan_id: int) -> list[dict]:
     with connect() as con:
         rows = con.execute(
             """SELECT ip, mac, hostname, vendor, device_type, brand, model,
-                      confidence, services, open_ports, ssdp
+                      confidence, services, open_ports, ssdp, http_titles
                FROM devices WHERE scan_id = ? ORDER BY ip""",
             (scan_id,),
         ).fetchall()
         out = []
         for r in rows:
             d = dict(r)
-            for k in ("services", "open_ports", "ssdp"):
+            for k in ("services", "open_ports", "ssdp", "http_titles"):
                 try: d[k] = json.loads(d[k]) if d[k] else []
                 except Exception: d[k] = []
             out.append(d)

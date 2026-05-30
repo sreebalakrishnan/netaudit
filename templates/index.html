@@ -63,12 +63,14 @@
   .verdict li::before { content: '·'; position: absolute; left: 6px; color: var(--muted); font-weight: 700; }
 
   /* Safety strip */
-  .safety { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; margin-bottom: 16px; }
-  .tile { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; display: flex; gap: 12px; align-items: flex-start; }
+  .safety { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; margin-bottom: 16px; }
+  .tile { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; }
+  .tile-head { display: flex; gap: 12px; align-items: flex-start; }
   .tile .icon { font-size: 22px; line-height: 1; flex-shrink: 0; }
+  .tile-body { flex: 1; min-width: 0; }
   .tile .label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); font-weight: 600; }
-  .tile .value { font-size: 14px; font-weight: 600; margin-top: 2px; line-height: 1.2; word-break: break-word; }
-  .tile .sub { font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .tile .value { font-size: 14px; font-weight: 600; margin-top: 2px; line-height: 1.25; word-break: break-word; }
+  .tile .sub { font-size: 11px; color: var(--muted); margin-top: 3px; line-height: 1.35; }
   .tile.ok { border-color: rgba(110, 231, 183, 0.4); }
   .tile.warn { border-color: rgba(251, 191, 36, 0.5); }
   .tile.danger { border-color: rgba(248, 113, 113, 0.5); }
@@ -76,6 +78,14 @@
   .tile.ok .badge { background: rgba(110, 231, 183, 0.15); color: var(--accent); }
   .tile.warn .badge { background: rgba(251, 191, 36, 0.15); color: var(--warn); }
   .tile.danger .badge { background: rgba(248, 113, 113, 0.15); color: var(--danger); }
+  .tile.has-detail { cursor: pointer; transition: border-color .15s; }
+  .tile.has-detail:hover { border-color: var(--border-2); }
+  .tile .chev { font-size: 9px; color: var(--muted-2); flex-shrink: 0; align-self: center; transition: transform .15s; }
+  .tile.expanded .chev { transform: rotate(180deg); color: var(--muted); }
+  .tile-detail { display: none; font-size: 11px; color: var(--muted); font-family: "SF Mono", ui-monospace, Menlo, monospace; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border-2); word-break: break-word; line-height: 1.5; }
+  .tile.expanded .tile-detail { display: block; }
+  .tile-detail .row { margin-bottom: 3px; }
+  .tile-detail strong { color: var(--text); font-weight: 500; }
   .skeleton { color: var(--muted-2); }
 
   /* Stats strip */
@@ -260,6 +270,7 @@ function renderGrid(devices) {
       <div class="card-detail">
         <div class="row"><strong>Services:</strong> ${allSvc}</div>
         <div class="row"><strong>Ports:</strong> ${allPorts}</div>
+        ${(d.http_titles || []).map(t => `<div class="row"><strong>HTTP title:</strong> ${t}</div>`).join('')}
         ${ssdpLines}
         ${d.vendor && d.vendor !== d.brand ? `<div class="row"><strong>OUI vendor:</strong> ${d.vendor}</div>` : ''}
       </div>
@@ -275,17 +286,24 @@ async function refreshScans() {
   renderScans(scans);
 }
 
-function tile(severity, icon, label, value, sub, badge) {
+function tile(severity, icon, label, value, sub, badge, detail) {
   const sevClass = severity || '';
+  const hasDetail = detail ? 'has-detail' : '';
   const badgeHtml = badge ? `<span class="badge">${badge}</span>` : '';
   const subHtml = sub ? `<div class="sub">${sub}</div>` : '';
-  return `<div class="tile ${sevClass}">
-    <div class="icon">${icon}</div>
-    <div>
-      <div class="label">${label}${badgeHtml}</div>
-      <div class="value">${value}</div>
-      ${subHtml}
+  const chevHtml = detail ? `<div class="chev">▼</div>` : '';
+  const detailHtml = detail ? `<div class="tile-detail">${detail}</div>` : '';
+  return `<div class="tile ${sevClass} ${hasDetail}">
+    <div class="tile-head">
+      <div class="icon">${icon}</div>
+      <div class="tile-body">
+        <div class="label">${label}${badgeHtml}</div>
+        <div class="value">${value}</div>
+        ${subHtml}
+      </div>
+      ${chevHtml}
     </div>
+    ${detailHtml}
   </div>`;
 }
 
@@ -303,6 +321,11 @@ function renderVerdict(v) {
   </div>`;
 }
 
+function detailRow(label, value) {
+  if (value == null || value === '') return '';
+  return `<div class="row"><strong>${label}:</strong> ${value}</div>`;
+}
+
 function renderSafety(n) {
   renderVerdict(n.verdict);
   const c = $('safety');
@@ -310,30 +333,52 @@ function renderSafety(n) {
 
   // Wi-Fi
   if (n.wifi) {
-    const enc = n.wifi.encryption || 'Unknown';
-    const ssid = n.wifi.ssid && n.wifi.ssid !== '<redacted>' ? n.wifi.ssid : 'Current network';
-    const isOpen = /open|none/i.test(enc);
-    const isWeak = /wep|wpa[^23]/i.test(enc);
+    const enc = (n.wifi.encryption || '').toLowerCase();
+    const isOpen = /open|none/.test(enc) || !enc;
+    const isWeak = /wep|wpa (?!2|3)|wpa1/.test(enc);
     const sev = isOpen ? 'danger' : isWeak ? 'warn' : 'ok';
-    const badge = isOpen ? 'OPEN' : isWeak ? 'WEAK' : 'OK';
-    tiles.push(tile(sev, '📶', 'Wi-Fi', ssid, `${enc}${n.wifi.rssi ? ' · ' + n.wifi.rssi.split(' / ')[0] : ''}`, badge));
+    const headline = isOpen ? 'No password!' : isWeak ? 'Older encryption' : 'Encrypted';
+    const rssiNum = (n.wifi.rssi || '').match(/-(\d+)/);
+    const sigWord = rssiNum ? (parseInt(rssiNum[1]) < 60 ? 'strong signal' : parseInt(rssiNum[1]) < 75 ? 'good signal' : 'weak signal') : null;
+    const ssid = n.wifi.ssid && n.wifi.ssid !== '<redacted>' ? n.wifi.ssid : null;
+    const sub = [ssid && `on "${ssid}"`, sigWord].filter(Boolean).join(' · ');
+    const detail = [
+      detailRow('Encryption', n.wifi.encryption || 'unknown'),
+      detailRow('Channel', n.wifi.channel),
+      detailRow('Signal / Noise', n.wifi.rssi),
+      detailRow('SSID', n.wifi.ssid || '(redacted by macOS without location access)'),
+    ].join('');
+    tiles.push(tile(sev, '📶', 'Wi-Fi', headline, sub, null, detail));
   }
 
-  // Captive portal
+  // Internet / captive portal
   if (n.captive_portal) {
     const s = n.captive_portal.status;
-    if (s === 'open') tiles.push(tile('ok', '🌐', 'Internet', 'Open', n.captive_portal.note, 'OK'));
-    else if (s === 'captive') tiles.push(tile('warn', '🚧', 'Internet', 'Captive portal', 'Sign-in required', 'PORTAL'));
-    else tiles.push(tile('danger', '🚫', 'Internet', 'No outbound', n.captive_portal.note, 'OFFLINE'));
+    const headline = s === 'open' ? 'Reachable' : s === 'captive' ? 'Sign-in required' : 'Offline';
+    const sev = s === 'open' ? 'ok' : s === 'captive' ? 'warn' : 'danger';
+    const icon = s === 'open' ? '🌐' : s === 'captive' ? '🚧' : '🚫';
+    const sub = s === 'open' ? 'You can reach the internet' :
+                s === 'captive' ? 'Log in to continue' : "You're connected but offline";
+    const detail = detailRow('Probe', `Apple captive.apple.com — ${n.captive_portal.note}`);
+    tiles.push(tile(sev, icon, 'Internet', headline, sub, null, detail));
   }
 
   // Public IP / geo
   if (n.public) {
     if (n.public.ip) {
-      const loc = [n.public.city, n.public.country].filter(Boolean).join(', ');
-      tiles.push(tile('', '🌍', 'Public IP', n.public.ip, `${loc}${n.public.org ? ' · ' + n.public.org.split(' ').slice(0, 3).join(' ') : ''}`));
+      const loc = [n.public.city, n.public.country].filter(Boolean).join(', ') || '—';
+      const isp = n.public.org ? n.public.org.replace(/^AS\d+\s+/, '').split(' ').slice(0, 3).join(' ') : '';
+      const sub = isp ? `via ${isp}` : '';
+      const detail = [
+        detailRow('Address', n.public.ip),
+        detailRow('City', n.public.city),
+        detailRow('Region', n.public.region),
+        detailRow('Country', n.public.country),
+        detailRow('ISP / org', n.public.org),
+      ].join('');
+      tiles.push(tile('', '🌍', 'Public IP', loc, sub, null, detail));
     } else {
-      tiles.push(tile('warn', '🌍', 'Public IP', 'Unknown', n.public.error || ''));
+      tiles.push(tile('warn', '🌍', 'Public IP', 'Unknown', n.public.error || '', null, null));
     }
   }
 
@@ -342,17 +387,39 @@ function renderSafety(n) {
     const cls = n.dns.classification || {};
     const sevMap = { 'public': 'ok', 'gateway': 'ok', 'private-other': 'warn', 'external': 'warn', 'unknown': '' };
     const sev = sevMap[cls.status] || '';
+    const knownMap = { '1.1.1.1': 'Cloudflare', '1.0.0.1': 'Cloudflare', '8.8.8.8': 'Google', '8.8.4.4': 'Google', '9.9.9.9': 'Quad9' };
     const primary = n.dns.resolvers[0] || '—';
-    tiles.push(tile(sev, '🧭', 'DNS', primary, cls.note || ''));
+    const friendly = knownMap[primary];
+    const headline = cls.status === 'public' && friendly ? `Using ${friendly}` :
+                     cls.status === 'gateway' ? 'Using router DNS' :
+                     cls.status === 'private-other' ? 'Unusual DNS' :
+                     cls.status === 'external' ? 'External DNS' : `Using ${primary}`;
+    const sub = cls.status === 'public' ? 'Trusted public resolver' :
+                cls.status === 'gateway' ? 'Default home/café setup' :
+                'Verify before sensitive use';
+    const detail = [
+      detailRow('Primary resolver', primary),
+      detailRow('All resolvers', n.dns.resolvers.join(', ')),
+      detailRow('Classification', cls.note),
+    ].join('');
+    tiles.push(tile(sev, '🧭', 'DNS', headline, sub, null, detail));
   }
 
-  // Speed
+  // Download speed
   if (n.speed) {
     if (n.speed.down_mbps != null) {
-      const sev = n.speed.down_mbps < 5 ? 'warn' : 'ok';
-      tiles.push(tile(sev, '⚡', 'Download', `${n.speed.down_mbps} Mbps`, `${(n.speed.bytes/1e6).toFixed(1)} MB in ${n.speed.elapsed_s}s`));
+      const m = n.speed.down_mbps;
+      const headline = m >= 25 ? 'Fast' : m >= 8 ? 'Fine for HD' : m >= 2 ? 'OK for browsing' : 'Slow';
+      const sev = m < 2 ? 'warn' : 'ok';
+      const sub = `${m} Mbps down`;
+      const detail = [
+        detailRow('Speed', `${m} Mbps`),
+        detailRow('Sample', `${(n.speed.bytes/1e6).toFixed(1)} MB in ${n.speed.elapsed_s}s`),
+        detailRow('Endpoint', n.speed.endpoint),
+      ].join('');
+      tiles.push(tile(sev, '⚡', 'Download', headline, sub, null, detail));
     } else {
-      tiles.push(tile('warn', '⚡', 'Download', 'Failed', n.speed.error || ''));
+      tiles.push(tile('warn', '⚡', 'Download', 'Test failed', n.speed.error || '', null, null));
     }
   }
 
@@ -362,53 +429,77 @@ function renderSafety(n) {
     const gw = n.latency.gateway || {};
     if (inet.avg_ms != null) {
       const jit = inet.jitter_ms;
-      const sev = (inet.avg_ms > 250 || (jit != null && jit > 40)) ? 'warn' : 'ok';
-      const gwLine = gw.avg_ms != null ? ` · gw ${gw.avg_ms.toFixed(0)}ms` : '';
-      const jitLine = jit != null ? ` · jitter ${jit.toFixed(0)}ms` : '';
-      tiles.push(tile(sev, '📡', 'Latency', `${inet.avg_ms.toFixed(0)} ms`, `to 1.1.1.1${jitLine}${gwLine}`));
+      const lat = inet.avg_ms;
+      const lagging = lat > 250 || (jit != null && jit > 40);
+      const meh = lat > 120 || (jit != null && jit > 20);
+      const headline = lagging ? 'Calls will lag' : meh ? 'OK for calls' : 'Snappy';
+      const sev = lagging ? 'warn' : 'ok';
+      const sub = `${lat.toFixed(0)} ms${jit != null ? ` · jitter ${jit.toFixed(0)} ms` : ''}`;
+      const detail = [
+        detailRow('To 1.1.1.1 (internet)', `avg ${lat.toFixed(1)} ms${jit != null ? `, jitter ${jit.toFixed(1)} ms` : ''}, loss ${inet.loss_pct || 0}%`),
+        gw.avg_ms != null ? detailRow('To gateway', `avg ${gw.avg_ms.toFixed(1)} ms${gw.jitter_ms != null ? `, jitter ${gw.jitter_ms.toFixed(1)} ms` : ''}`) : '',
+      ].join('');
+      tiles.push(tile(sev, '📡', 'Response time', headline, sub, null, detail));
     }
   }
 
-  // ARP anomaly
+  // ARP / tampering
   if (n.arp_check) {
-    const sev = n.arp_check.severity === 'warn' ? 'warn' : 'ok';
+    const sev = n.arp_check.severity === 'warn' ? 'danger' : 'ok';
     const findings = n.arp_check.findings || [];
-    const summary = sev === 'ok' ? 'No anomalies' : `${findings.length} flagged`;
-    tiles.push(tile(sev, sev === 'ok' ? '🛡️' : '⚠️', 'ARP check', summary, findings[0] || ''));
+    const headline = sev === 'ok' ? 'No tampering' : 'Possible interception';
+    const sub = sev === 'ok' ? 'ARP table looks clean' : findings[0] || '';
+    const detail = findings.map(f => `<div class="row">${f}</div>`).join('');
+    tiles.push(tile(sev, sev === 'ok' ? '🛡️' : '⚠️', 'Safety check', headline, sub, null, detail));
   }
 
   // Path / hops
   if (n.hops) {
     const h = n.hops;
     if (h.error) {
-      tiles.push(tile('warn', '🛣️', 'Path', 'Trace failed', h.error.substring(0, 40)));
+      tiles.push(tile('warn', '🛣️', 'Path', 'Trace failed', h.error.substring(0, 40), null, null));
     } else if (h.count) {
       const sev = h.count > 15 ? 'warn' : 'ok';
-      const summary = h.reached ? `${h.count} hops` : `${h.count}+ hops`;
-      const sub = h.reached ? 'reached 1.1.1.1' : `to 1.1.1.1 · ICMP filtered after hop ${h.hops.filter(x => x.ip).length}`;
-      tiles.push(tile(sev, '🛣️', 'Path', summary, sub));
+      const headline = h.count <= 6 ? 'Direct route' : h.count <= 12 ? 'Normal route' : 'Indirect route';
+      const sub = h.reached ? `${h.count} hops to 1.1.1.1` : `${h.count}+ hops (ICMP filtered)`;
+      const hopList = h.hops.map(x => `<div class="row">${String(x.n).padStart(2,'0')}  ${x.ip || '·  ·  ·'}${x.rtt_ms ? `  ${x.rtt_ms} ms` : ''}</div>`).join('');
+      tiles.push(tile(sev, '🛣️', 'Path', headline, sub, null, hopList));
     }
   }
 
   // VPN
   if (n.vpn) {
     if (n.vpn.active) {
-      tiles.push(tile('ok', '🔒', 'VPN', 'Active', `via ${n.vpn.interface}`, 'ON'));
+      const detail = [
+        detailRow('Status', 'Active'),
+        detailRow('Interface', n.vpn.interface),
+        detailRow('Note', 'Your traffic exits through a tunnel'),
+      ].join('');
+      tiles.push(tile('ok', '🔒', 'VPN', 'VPN is on', `via ${n.vpn.interface}`, 'ON', detail));
     } else {
-      tiles.push(tile('', '🔓', 'VPN', 'Not active', n.vpn.interface ? `default via ${n.vpn.interface}` : ''));
+      const detail = detailRow('Default route', n.vpn.interface || '—');
+      tiles.push(tile('', '🔓', 'VPN', 'No VPN', n.vpn.interface ? `default via ${n.vpn.interface}` : '', null, detail));
     }
   }
 
   // Apple Private Relay
   if (n.private_relay) {
-    if (n.private_relay.available) {
-      tiles.push(tile('', '🍎', 'Private Relay', 'Available', n.private_relay.note));
-    } else {
-      tiles.push(tile('', '🍎', 'Private Relay', 'Not detected', n.private_relay.note));
-    }
+    const avail = n.private_relay.available;
+    const headline = avail ? 'Available' : 'Not available';
+    const sub = avail ? 'Safari & Mail use it' : 'mask.icloud.com not reachable';
+    const detail = [
+      detailRow('Probe', 'DNS resolve of mask.icloud.com'),
+      detailRow('Note', n.private_relay.note),
+      detailRow('Caveat', 'Per-app — only Safari and Mail use Private Relay'),
+    ].join('');
+    tiles.push(tile('', '🍎', 'Private Relay', headline, sub, null, detail));
   }
 
   c.innerHTML = tiles.join('') || '<div class="empty">Loading network safety…</div>';
+  // Wire click-to-expand on tiles with details
+  c.querySelectorAll('.tile.has-detail').forEach(el => {
+    el.onclick = () => el.classList.toggle('expanded');
+  });
 }
 
 function renderSafetySkeleton() {

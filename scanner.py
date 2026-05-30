@@ -118,6 +118,7 @@ def _merge_signals(*sources: dict[str, Signals]) -> dict[str, Signals]:
             cur.mdns_hostnames |= sig.mdns_hostnames
             cur.ssdp_servers |= sig.ssdp_servers
             cur.open_ports |= sig.open_ports
+            cur.http_titles |= sig.http_titles
     return merged
 
 
@@ -144,9 +145,22 @@ def scan(subnet: str = "auto") -> tuple[str, list[dict]]:
         hostnames = dict(zip(ips, ex.map(resolve_hostname, ips)))
         port_results = dict(zip(ips, ex.map(fingerprint.probe_ports, ips)))
 
+    # HTTP title probes for devices serving web UIs (only 80/443)
+    web_targets = [ip for ip, ports in port_results.items() if ports & {80, 443}]
+    title_results: dict[str, set[str]] = {}
+    if web_targets:
+        with ThreadPoolExecutor(max_workers=min(16, len(web_targets))) as ex:
+            for ip, titles in zip(
+                web_targets,
+                ex.map(lambda ip: fingerprint.probe_http_titles(ip, port_results[ip]), web_targets),
+            ):
+                if titles:
+                    title_results[ip] = titles
+
     # Build port signals into the merge
     port_sig = {ip: Signals(open_ports=ports) for ip, ports in port_results.items()}
-    signals = _merge_signals(mdns_sig, ssdp_sig, port_sig)
+    title_sig = {ip: Signals(http_titles=titles) for ip, titles in title_results.items()}
+    signals = _merge_signals(mdns_sig, ssdp_sig, port_sig, title_sig)
 
     devices: list[dict] = []
     for ip in sorted(ips, key=lambda s: tuple(int(o) for o in s.split("."))):
@@ -168,5 +182,6 @@ def scan(subnet: str = "auto") -> tuple[str, list[dict]]:
             "services": sorted(sig.services),
             "open_ports": sorted(sig.open_ports),
             "ssdp": sorted(sig.ssdp_servers)[:3],
+            "http_titles": sorted(sig.http_titles),
         })
     return str(network), devices

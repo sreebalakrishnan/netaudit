@@ -4,9 +4,12 @@ All discovery is rootless: multicast UDP listening + connect-scan TCP.
 """
 from __future__ import annotations
 
+import re
 import socket
+import ssl
 import subprocess
 import time
+import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 
@@ -55,6 +58,7 @@ class Signals:
     mdns_hostnames: set[str] = field(default_factory=set)
     ssdp_servers: set[str] = field(default_factory=set)
     open_ports: set[int] = field(default_factory=set)
+    http_titles: set[str] = field(default_factory=set)
 
 
 # ---------- mDNS ----------
@@ -165,6 +169,79 @@ def probe_ports(ip: str, ports: list[int] = PORT_PROBES) -> set[int]:
             if ok:
                 open_set.add(port)
     return open_set
+
+
+# ---------- HTTP title probe ----------
+
+_TITLE_RE = re.compile(r"<title[^>]*>(.*?)</title>", re.IGNORECASE | re.DOTALL)
+_META_REFRESH_RE = re.compile(
+    r'<meta\s+http-equiv\s*=\s*"?refresh"?\s+content\s*=\s*"\s*\d+\s*;\s*URL=([^"]+)"',
+    re.IGNORECASE,
+)
+_HTTP_UA = "NetAudit/0.6 (network audit)"
+
+
+def _http_get(url: str, timeout: float) -> tuple[str, str | None]:
+    """Fetch URL, return (body, server_header). Ignore TLS errors."""
+    ctx = ssl._create_unverified_context() if url.startswith("https://") else None
+    req = urllib.request.Request(url, headers={"User-Agent": _HTTP_UA})
+    with urllib.request.urlopen(req, timeout=timeout, context=ctx) as r:
+        server = r.headers.get("Server")
+        body = r.read(16384).decode(errors="ignore")
+    return body, server
+
+
+def http_title(ip: str, port: int, timeout: float = 1.5) -> tuple[str | None, str | None]:
+    """Return (title, server_header). Follow one meta-refresh if root has no title."""
+    scheme = "https" if port == 443 else "http"
+    root = f"{scheme}://{ip}:{port}/"
+    try:
+        body, server = _http_get(root, timeout)
+    except Exception:
+        return None, None
+    m = _TITLE_RE.search(body)
+    if m:
+        return _clean_title(m.group(1)), server
+    # No <title> at root — follow a meta-refresh if there is one
+    rm = _META_REFRESH_RE.search(body)
+    if rm:
+        next_url = rm.group(1)
+        if next_url.startswith("/"):
+            next_url = f"{scheme}://{ip}:{port}{next_url}"
+        elif not next_url.startswith("http"):
+            next_url = f"{scheme}://{ip}:{port}/{next_url}"
+        try:
+            body2, server2 = _http_get(next_url, timeout)
+            m2 = _TITLE_RE.search(body2)
+            if m2:
+                return _clean_title(m2.group(1)), server or server2
+            return None, server or server2
+        except Exception:
+            pass
+    return None, server
+
+
+def _clean_title(raw: str) -> str | None:
+    title = re.sub(r"\s+", " ", raw).strip()
+    return title[:120] or None
+
+
+def probe_http_titles(ip: str, open_ports: set[int]) -> set[str]:
+    """Probe whichever of 80/443 are open. Return de-duped title + server strings.
+
+    Server header values are prefixed with 'srv:' so the classifier can tell them
+    apart from <title> strings.
+    """
+    out: set[str] = set()
+    for port in (80, 443):
+        if port not in open_ports:
+            continue
+        title, server = http_title(ip, port)
+        if title:
+            out.add(title)
+        if server:
+            out.add(f"srv:{server}")
+    return out
 
 
 # ---------- Classifier ----------
@@ -302,6 +379,41 @@ def classify(
     # ---- IoT / MQTT ----
     if 1883 in ports:
         return _result("iot", vendor, "IoT device", "medium")
+
+    # ---- HTTP title hints (for everything that didn't match above) ----
+    titles_blob = " ".join(signals.http_titles).lower()
+    if titles_blob:
+        if any(s in titles_blob for s in ["synology", "diskstation", "dsm "]):
+            return _result("nas", "Synology", "Synology NAS", "high")
+        if any(s in titles_blob for s in ["qnap"]):
+            return _result("nas", "QNAP", "QNAP NAS", "high")
+        if "tp-link" in titles_blob or "tplink" in titles_blob:
+            return _result("router", "TP-Link", "TP-Link router/AP", "high")
+        if any(s in titles_blob for s in ["asus router", "rt-ac", "rt-ax"]):
+            return _result("router", "ASUS", "ASUS router", "high")
+        if any(s in titles_blob for s in ["netgear", "nighthawk", "orbi"]):
+            return _result("router", "Netgear", "Netgear router/AP", "high")
+        if "linksys" in titles_blob:
+            return _result("router", "Linksys", "Linksys router", "high")
+        if any(s in titles_blob for s in ["unifi", "ubiquiti", "udm"]):
+            return _result("router", "Ubiquiti", "UniFi device", "high")
+        if "eero" in titles_blob:
+            return _result("router", "eero", "eero mesh node", "high")
+        if any(s in titles_blob for s in ["hikvision", "dahua", "nvr ", "dvr ", "ip camera", "网络摄像机"]):
+            return _result("iot", None, "IP camera / NVR", "high")
+        if any(s in titles_blob for s in ["hp laserjet", "hp officejet", "hp ", "officejet", "laserjet"]):
+            return _result("printer", "HP", "HP printer", "high")
+        if any(s in titles_blob for s in ["brother ", "brother-"]):
+            return _result("printer", "Brother", "Brother printer", "high")
+        if "epson" in titles_blob:
+            return _result("printer", "Epson", "Epson printer", "high")
+        if any(s in titles_blob for s in ["canon ", "pixma"]):
+            return _result("printer", "Canon", "Canon printer", "high")
+        if "philips hue" in titles_blob or "hue bridge" in titles_blob:
+            return _result("iot", "Philips", "Hue Bridge", "high")
+        # Generic web-accessible device — show the title so the user can see what it is
+        sample = next(iter(signals.http_titles))
+        return _result("unknown", vendor, sample[:48], "medium")
 
     # ---- Generic UPnP fallback ----
     if servers:
