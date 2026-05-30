@@ -72,3 +72,38 @@ def list_scans():
 @app.get("/api/network/check")
 def network_check():
     return network.run_all()
+
+
+@app.post("/api/report")
+def save_report():
+    """Snapshot: latest safety check + latest finished scan, saved as JSON.
+
+    Useful for café A/B comparison — run audits at different networks and
+    diff the reports later.
+    """
+    from datetime import datetime, timezone
+    import json as _json
+    import re as _re
+    from pathlib import Path
+
+    safety = network.run_all()
+    scans = db.list_scans(limit=1)
+    last_scan = None
+    if scans:
+        last_scan = db.get_scan(scans[0]["id"])
+        if last_scan:
+            last_scan["devices"] = db.get_devices(scans[0]["id"])
+
+    ssid = (safety.get("wifi") or {}).get("ssid") or "unknown"
+    slug = _re.sub(r"[^A-Za-z0-9-]", "_", ssid)[:24] or "unknown"
+    ts = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    reports_dir = Path.home() / ".netaudit" / "reports"
+    reports_dir.mkdir(parents=True, exist_ok=True)
+    path = reports_dir / f"{ts}_{slug}.json"
+    path.write_text(_json.dumps({
+        "timestamp_utc": ts,
+        "ssid": ssid,
+        "safety": safety,
+        "scan": last_scan,
+    }, indent=2, default=str))
+    return {"path": str(path)}

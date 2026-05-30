@@ -250,6 +250,14 @@ def _has_any(haystack: set[str], needles: list[str]) -> bool:
     return any(any(n.lower() in h.lower() for h in haystack) for n in needles)
 
 
+def _oui(mac: str | None) -> str | None:
+    """First three octets of a MAC, lowercase, colon-joined."""
+    if not mac:
+        return None
+    parts = mac.split(":")
+    return ":".join(parts[:3]).lower() if len(parts) >= 3 else None
+
+
 def classify(
     ip: str,
     mac: str | None,
@@ -257,6 +265,7 @@ def classify(
     vendor: str | None,
     signals: Signals,
     gateway_ip: str | None,
+    gateway_mac: str | None = None,
 ) -> dict:
     """Rule-based classification. Returns dict with type/brand/model/confidence."""
     services = signals.services
@@ -379,6 +388,11 @@ def classify(
     # ---- IoT / MQTT ----
     if 1883 in ports:
         return _result("iot", vendor, "IoT device", "medium")
+
+    # ---- Mesh node (same OUI as the gateway) ----
+    if gateway_mac and mac and _oui(mac) == _oui(gateway_mac):
+        # Same vendor prefix as the router — almost always a mesh extender / AP
+        return _result("router", vendor, "Mesh node / access point", "high")
 
     # ---- HTTP title hints (for everything that didn't match above) ----
     titles_blob = " ".join(signals.http_titles).lower()

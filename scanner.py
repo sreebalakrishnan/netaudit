@@ -126,6 +126,7 @@ def scan(subnet: str = "auto") -> tuple[str, list[dict]]:
     """Run a full scan with fingerprinting. Returns (subnet, devices)."""
     network = resolve_subnet(subnet)
     gateway = fingerprint.detect_gateway()
+    gateway_mac: str | None = None
 
     # Run mDNS + SSDP discovery in parallel with the ping sweep
     with ThreadPoolExecutor(max_workers=3) as ex:
@@ -137,6 +138,8 @@ def scan(subnet: str = "auto") -> tuple[str, list[dict]]:
         alive = fut_alive.result()
 
     arp = read_arp_table()
+    if gateway:
+        gateway_mac = arp.get(gateway)
     ips = (alive | set(arp.keys()) | set(mdns_sig.keys()) | set(ssdp_sig.keys()))
     ips = {ip for ip in ips if ipaddress.IPv4Address(ip) in network}
 
@@ -168,7 +171,8 @@ def scan(subnet: str = "auto") -> tuple[str, list[dict]]:
         sig = signals.get(ip, Signals())
         info = fingerprint.classify(
             ip=ip, mac=mac, hostname=hostnames.get(ip),
-            vendor=vendor_for_mac(mac), signals=sig, gateway_ip=gateway,
+            vendor=vendor_for_mac(mac), signals=sig,
+            gateway_ip=gateway, gateway_mac=gateway_mac,
         )
         devices.append({
             "ip": ip,

@@ -10,12 +10,13 @@ DATA_FILES = [("templates", ["templates/index.html"])]
 OPTIONS = {
     "argv_emulation": False,
     "strip": True,
+    "iconfile": "NetAudit.icns",
     "plist": {
         "CFBundleName": "NetAudit",
         "CFBundleDisplayName": "NetAudit",
         "CFBundleIdentifier": "dev.sreeb.netaudit",
-        "CFBundleVersion": "0.7.0",
-        "CFBundleShortVersionString": "0.7.0",
+        "CFBundleVersion": "0.8.0",
+        "CFBundleShortVersionString": "0.8.0",
         "LSMinimumSystemVersion": "11.0",
         "NSHighResolutionCapable": True,
         "LSApplicationCategoryType": "public.app-category.utilities",

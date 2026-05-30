@@ -72,12 +72,14 @@ class NetAuditApp(rumps.App):
 
         self._status_item = rumps.MenuItem("Checking network…")
         self._refresh_item = rumps.MenuItem("Refresh Now", callback=self._on_refresh)
+        self._report_item = rumps.MenuItem("Save Report…", callback=self._on_save_report, key="s")
         self.menu = [
             rumps.MenuItem("Open NetAudit…", callback=self._on_open, key="o"),
             None,
             self._status_item,
             None,
             self._refresh_item,
+            self._report_item,
             rumps.MenuItem("Quit NetAudit", callback=rumps.quit_application, key="q"),
         ]
 
@@ -124,10 +126,39 @@ class NetAuditApp(rumps.App):
     def _on_open(self, _sender):
         callAfter(self._open_window)
 
+    # NSApplicationDelegate hook: clicking the dock icon when no window is
+    # visible reopens the main window.
+    def applicationShouldHandleReopen_hasVisibleWindows_(self, _app, has_visible):
+        if not has_visible:
+            callAfter(self._open_window)
+        return True
+
     # -------- Verdict polling --------
 
     def _on_refresh(self, _sender):
         threading.Thread(target=self._poll_once, daemon=True).start()
+
+    # -------- Save report --------
+
+    def _on_save_report(self, _sender):
+        threading.Thread(target=self._save_report, daemon=True).start()
+
+    def _save_report(self):
+        try:
+            req = urllib.request.Request(
+                f"{self.base_url}/api/report", method="POST"
+            )
+            with urllib.request.urlopen(req, timeout=60) as r:
+                data = json.loads(r.read())
+        except Exception as e:
+            callAfter(lambda: rumps.notification(
+                "NetAudit", "Save failed", str(e)[:120]
+            ))
+            return
+        path = data.get("path", "(unknown)")
+        callAfter(lambda: rumps.notification(
+            "NetAudit", "Report saved", path
+        ))
 
     def _poll_loop(self):
         # Small initial delay so the window's first paint isn't competing

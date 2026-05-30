@@ -19,6 +19,8 @@ build/
 dist/
 *.dmg
 *.app
+NetAudit.icns
+assets/NetAudit.iconset/
 
 # Env / secrets
 .env
