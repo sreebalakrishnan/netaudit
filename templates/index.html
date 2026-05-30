@@ -22,9 +22,13 @@
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); font: 14px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif; }
-  header { padding: 28px 32px 16px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--border); }
+  header { padding: 28px 32px 16px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--border); gap: 16px; }
   header h1 { margin: 0; font-size: 18px; font-weight: 600; letter-spacing: -0.01em; }
   header h1 span { color: var(--accent); }
+  header .actions { display: flex; gap: 8px; align-items: center; margin-left: auto; }
+  header .icon-btn { background: transparent; color: var(--muted); border: 1px solid var(--border-2); border-radius: 6px; padding: 6px 12px; cursor: pointer; font-size: 12px; font-weight: 500; transition: all .15s; }
+  header .icon-btn:hover { color: var(--text); border-color: var(--muted-2); background: var(--panel-2); }
+  header .icon-btn.danger:hover { color: white; background: var(--danger); border-color: var(--danger); }
   main { padding: 24px 32px 64px; max-width: 1200px; margin: 0 auto; }
   .row { display: flex; gap: 12px; align-items: center; margin-bottom: 16px; flex-wrap: wrap; }
   button { background: var(--accent); color: #062019; border: 0; padding: 10px 18px; border-radius: 8px; font-weight: 600; font-size: 13px; cursor: pointer; transition: background .15s; }
@@ -126,6 +130,9 @@
 <header>
   <h1>Net<span>Audit</span></h1>
   <div class="status" id="status"><span class="dot"></span><span id="status-text">idle</span></div>
+  <div class="actions">
+    <button class="icon-btn danger" id="quit-btn" title="Quit NetAudit (⌘Q)">Exit</button>
+  </div>
 </header>
 <main>
   <div class="row">
@@ -556,6 +563,15 @@ $('scan-btn').onclick = async () => {
 };
 
 $('safety-btn').onclick = refreshSafety;
+
+$('quit-btn').onclick = async () => {
+  if (!confirm('Quit NetAudit?\n\nThe menu bar status will stop updating until you launch the app again.')) return;
+  try {
+    await fetch('/api/quit', { method: 'POST' });
+  } catch {}
+  // Give the server a moment to send terminate: to NSApp.
+  setTimeout(() => { try { window.close(); } catch {} }, 300);
+};
 
 refreshScans();
 refreshSafety();

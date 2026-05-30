@@ -74,6 +74,27 @@ def network_check():
     return network.run_all()
 
 
+@app.post("/api/quit")
+def quit_app():
+    """Trigger a clean macOS app termination from the UI Exit button."""
+    import threading
+    import time
+
+    def _quit():
+        time.sleep(0.15)  # let the HTTP response flush
+        try:
+            from PyObjCTools.AppHelper import callAfter
+            from AppKit import NSApp
+            callAfter(lambda: NSApp.terminate_(None))
+        except Exception:
+            # Dev mode (no AppKit) — fall back to signaling self
+            import os, signal
+            os.kill(os.getpid(), signal.SIGTERM)
+
+    threading.Thread(target=_quit, daemon=True).start()
+    return {"status": "quitting"}
+
+
 @app.post("/api/report")
 def save_report():
     """Snapshot: latest safety check + latest finished scan, saved as JSON.

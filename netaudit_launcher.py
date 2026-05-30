@@ -22,6 +22,8 @@ import uvicorn
 from AppKit import (
     NSApp,
     NSBackingStoreBuffered,
+    NSMenu,
+    NSMenuItem,
     NSWindow,
     NSWindowStyleMaskClosable,
     NSWindowStyleMaskMiniaturizable,
@@ -49,6 +51,58 @@ def find_free_port(host: str, preferred: int, attempts: int = 10) -> int:
             except OSError:
                 continue
     raise RuntimeError(f"No free port in {preferred}..{preferred + attempts - 1}")
+
+
+def install_app_menu():
+    """Install a minimal macOS app menu so standard shortcuts work — most
+    importantly Cmd+Q (quit), Cmd+H (hide), Cmd+W (close window). Without
+    this, those shortcuts do nothing because rumps doesn't set NSApp.mainMenu.
+    """
+    main = NSMenu.alloc().init()
+
+    app_menu_item = NSMenuItem.alloc().init()
+    main.addItem_(app_menu_item)
+    app_menu = NSMenu.alloc().initWithTitle_("NetAudit")
+
+    about = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+        "About NetAudit", "orderFrontStandardAboutPanel:", "")
+    app_menu.addItem_(about)
+    app_menu.addItem_(NSMenuItem.separatorItem())
+
+    hide = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+        "Hide NetAudit", "hide:", "h")
+    app_menu.addItem_(hide)
+
+    hide_others = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+        "Hide Others", "hideOtherApplications:", "h")
+    hide_others.setKeyEquivalentModifierMask_(1 << 19 | 1 << 20)  # opt+cmd
+    app_menu.addItem_(hide_others)
+
+    show_all = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+        "Show All", "unhideAllApplications:", "")
+    app_menu.addItem_(show_all)
+
+    app_menu.addItem_(NSMenuItem.separatorItem())
+
+    quit_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+        "Quit NetAudit", "terminate:", "q")
+    app_menu.addItem_(quit_item)
+    app_menu_item.setSubmenu_(app_menu)
+
+    # Window menu (for Cmd+W close, Cmd+M minimize)
+    window_menu_item = NSMenuItem.alloc().init()
+    main.addItem_(window_menu_item)
+    window_menu = NSMenu.alloc().initWithTitle_("Window")
+    close = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+        "Close Window", "performClose:", "w")
+    window_menu.addItem_(close)
+    minimize = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+        "Minimize", "performMiniaturize:", "m")
+    window_menu.addItem_(minimize)
+    window_menu_item.setSubmenu_(window_menu)
+    NSApp.setWindowsMenu_(window_menu)
+
+    NSApp.setMainMenu_(main)
 
 
 def wait_for_server(url: str, timeout: float = 10.0) -> bool:
@@ -83,6 +137,8 @@ class NetAuditApp(rumps.App):
             rumps.MenuItem("Quit NetAudit", callback=rumps.quit_application, key="q"),
         ]
 
+        # Install the standard macOS app menu (gives us Cmd+Q, Cmd+W, Cmd+H)
+        callAfter(install_app_menu)
         # Open the main window on launch
         callAfter(self._open_window)
         # Kick off the verdict-polling loop
