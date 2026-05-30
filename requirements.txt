@@ -7,6 +7,10 @@ psutil==6.0.0
 mac-vendor-lookup==0.1.12
 zeroconf==0.149.16
 
+# Native macOS UI shell (menu bar + WKWebView window)
+rumps==0.4.0
+pyobjc-framework-WebKit==12.2
+
 # Build-time only (Mac .app packaging)
 # py2app 0.28.10 needs pkg_resources, which setuptools removed in 81+
 setuptools<81

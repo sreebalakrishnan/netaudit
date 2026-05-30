@@ -1,11 +1,42 @@
+"""NetAudit entry point — native macOS shell.
+
+Architecture:
+  - uvicorn runs the FastAPI app in a background daemon thread
+  - rumps owns the main event loop (NSApp.run()) and the menu bar item
+  - A WKWebView NSWindow renders the existing HTML UI, pointing at the
+    local uvicorn server
+  - The menu bar shows a status dot (🟢/🟡/🔴/⚪︎) reflecting the latest
+    verdict from /api/network/check; auto-refreshes every 2 minutes
+"""
+from __future__ import annotations
+
+import json
 import socket
+import sys
 import threading
 import time
-import webbrowser
+import urllib.request
 
+import rumps
 import uvicorn
+from AppKit import (
+    NSApp,
+    NSBackingStoreBuffered,
+    NSWindow,
+    NSWindowStyleMaskClosable,
+    NSWindowStyleMaskMiniaturizable,
+    NSWindowStyleMaskResizable,
+    NSWindowStyleMaskTitled,
+)
+from Foundation import NSMakeRect, NSURL, NSURLRequest
+from PyObjCTools.AppHelper import callAfter
+from WebKit import WKWebView, WKWebViewConfiguration
 
 from config import API_HOST, API_PORT
+
+SEVERITY_ICONS = {"ok": "🟢", "warn": "🟡", "danger": "🔴"}
+POLL_INTERVAL_SECONDS = 120
+POLL_TIMEOUT_SECONDS = 30
 
 
 def find_free_port(host: str, preferred: int, attempts: int = 10) -> int:
@@ -20,18 +51,129 @@ def find_free_port(host: str, preferred: int, attempts: int = 10) -> int:
     raise RuntimeError(f"No free port in {preferred}..{preferred + attempts - 1}")
 
 
-def open_browser_when_ready(url: str):
-    time.sleep(1.0)
-    webbrowser.open(url)
+def wait_for_server(url: str, timeout: float = 10.0) -> bool:
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            with urllib.request.urlopen(url, timeout=1) as r:
+                if r.status == 200:
+                    return True
+        except Exception:
+            time.sleep(0.2)
+    return False
+
+
+class NetAuditApp(rumps.App):
+    def __init__(self, base_url: str):
+        super().__init__("NetAudit", title="⚪︎", quit_button=None)
+        self.base_url = base_url
+        self.window: NSWindow | None = None
+        self.webview: WKWebView | None = None
+
+        self._status_item = rumps.MenuItem("Checking network…")
+        self._refresh_item = rumps.MenuItem("Refresh Now", callback=self._on_refresh)
+        self.menu = [
+            rumps.MenuItem("Open NetAudit…", callback=self._on_open, key="o"),
+            None,
+            self._status_item,
+            None,
+            self._refresh_item,
+            rumps.MenuItem("Quit NetAudit", callback=rumps.quit_application, key="q"),
+        ]
+
+        # Open the main window on launch
+        callAfter(self._open_window)
+        # Kick off the verdict-polling loop
+        threading.Thread(target=self._poll_loop, daemon=True).start()
+
+    # -------- Window --------
+
+    def _open_window(self):
+        if self.window is not None:
+            self.window.makeKeyAndOrderFront_(None)
+            NSApp.activateIgnoringOtherApps_(True)
+            return
+
+        frame = NSMakeRect(140, 140, 1200, 820)
+        style = (
+            NSWindowStyleMaskTitled
+            | NSWindowStyleMaskClosable
+            | NSWindowStyleMaskResizable
+            | NSWindowStyleMaskMiniaturizable
+        )
+        self.window = NSWindow.alloc().initWithContentRect_styleMask_backing_defer_(
+            frame, style, NSBackingStoreBuffered, False
+        )
+        self.window.setTitle_("NetAudit")
+        # Hide instead of release when the user clicks the close button —
+        # so we can reopen via the menu bar without rebuilding the view.
+        self.window.setReleasedWhenClosed_(False)
+
+        config = WKWebViewConfiguration.alloc().init()
+        self.webview = WKWebView.alloc().initWithFrame_configuration_(frame, config)
+        self.window.setContentView_(self.webview)
+
+        url = NSURL.URLWithString_(self.base_url)
+        request = NSURLRequest.requestWithURL_(url)
+        self.webview.loadRequest_(request)
+
+        self.window.center()
+        self.window.makeKeyAndOrderFront_(None)
+        NSApp.activateIgnoringOtherApps_(True)
+
+    def _on_open(self, _sender):
+        callAfter(self._open_window)
+
+    # -------- Verdict polling --------
+
+    def _on_refresh(self, _sender):
+        threading.Thread(target=self._poll_once, daemon=True).start()
+
+    def _poll_loop(self):
+        # Small initial delay so the window's first paint isn't competing
+        time.sleep(2)
+        while True:
+            self._poll_once()
+            time.sleep(POLL_INTERVAL_SECONDS)
+
+    def _poll_once(self):
+        try:
+            with urllib.request.urlopen(
+                f"{self.base_url}/api/network/check", timeout=POLL_TIMEOUT_SECONDS
+            ) as r:
+                data = json.loads(r.read())
+        except Exception as e:
+            self._set_status("⚪︎", f"Couldn't reach probe: {e}")
+            return
+        verdict = data.get("verdict") or {}
+        icon = SEVERITY_ICONS.get(verdict.get("severity"), "⚪︎")
+        headline = verdict.get("headline") or "Network checked"
+        self._set_status(icon, headline)
+
+    def _set_status(self, icon: str, headline: str):
+        # UI updates must hop to the main thread
+        def update():
+            self.title = icon
+            self._status_item.title = headline
+        callAfter(update)
 
 
 def main():
     port = find_free_port(API_HOST, API_PORT)
     url = f"http://{API_HOST}:{port}"
-    print(f"NetAudit starting at {url}")
-    threading.Thread(target=open_browser_when_ready, args=(url,), daemon=True).start()
-    from api import app
-    uvicorn.run(app, host=API_HOST, port=port, log_level="info")
+    print(f"NetAudit starting at {url}", flush=True)
+
+    def run_server():
+        from api import app
+        uvicorn.run(app, host=API_HOST, port=port, log_level="warning")
+
+    threading.Thread(target=run_server, daemon=True).start()
+
+    if not wait_for_server(url, timeout=15):
+        print("Server failed to start within 15s", file=sys.stderr)
+        sys.exit(1)
+
+    NetAuditApp(url).run()
 
 
 if __name__ == "__main__":

@@ -14,10 +14,18 @@ OPTIONS = {
         "CFBundleName": "NetAudit",
         "CFBundleDisplayName": "NetAudit",
         "CFBundleIdentifier": "dev.sreeb.netaudit",
-        "CFBundleVersion": "0.1.0",
-        "CFBundleShortVersionString": "0.1.0",
+        "CFBundleVersion": "0.7.0",
+        "CFBundleShortVersionString": "0.7.0",
         "LSMinimumSystemVersion": "11.0",
         "NSHighResolutionCapable": True,
+        "LSApplicationCategoryType": "public.app-category.utilities",
+        "NSAppTransportSecurity": {
+            "NSAllowsLocalNetworking": True,
+            "NSExceptionDomains": {
+                "127.0.0.1": {"NSExceptionAllowsInsecureHTTPLoads": True},
+                "localhost": {"NSExceptionAllowsInsecureHTTPLoads": True},
+            },
+        },
     },
     "packages": [
         "fastapi",
@@ -35,6 +43,8 @@ OPTIONS = {
         "h11",
         "zeroconf",
         "ifaddr",
+        "rumps",
+        "objc",
     ],
     "includes": [
         "api",
@@ -47,6 +57,10 @@ OPTIONS = {
         "anyio._backends._asyncio",
         "asyncio",
         "email.mime.text",
+        "Foundation",
+        "AppKit",
+        "WebKit",
+        "PyObjCTools.AppHelper",
     ],
 }
 
