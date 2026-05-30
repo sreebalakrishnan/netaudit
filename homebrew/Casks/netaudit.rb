@@ -1,6 +1,6 @@
 cask "netaudit" do
   version "0.8.0"
-  sha256 "bb1ce993841aec11b4526880734608701f69d21f8ff989cd32011a58a091492a"
+  sha256 "f33e941b14a481b6355ca8f357a45996e4c371afd3f3f7f527475b025845c170"
 
   url "https://netaudit.sreeb.dev/NetAudit-#{version}.dmg"
   name "NetAudit"

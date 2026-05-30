@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>NetAudit</title>
 <style>
-  :root {
+  :root, :root[data-theme="dark"] {
     --bg: #0b0d10;
     --panel: #14171c;
     --panel-2: #1a1f26;
@@ -19,6 +19,23 @@
     --danger: #f87171;
     --warn: #fbbf24;
     --info: #60a5fa;
+    --shadow: 0 8px 24px rgba(0,0,0,0.6);
+  }
+  :root[data-theme="light"] {
+    --bg: #f7f8fa;
+    --panel: #ffffff;
+    --panel-2: #f1f4f8;
+    --border: #e4e8ee;
+    --border-2: #cdd4dd;
+    --text: #14171c;
+    --muted: #64748b;
+    --muted-2: #94a3b8;
+    --accent: #10b981;
+    --accent-2: #059669;
+    --danger: #dc2626;
+    --warn: #d97706;
+    --info: #2563eb;
+    --shadow: 0 12px 32px rgba(15, 23, 42, 0.12);
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); font: 14px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif; }
@@ -29,6 +46,32 @@
   header .icon-btn { background: transparent; color: var(--muted); border: 1px solid var(--border-2); border-radius: 6px; padding: 6px 12px; cursor: pointer; font-size: 12px; font-weight: 500; transition: all .15s; }
   header .icon-btn:hover { color: var(--text); border-color: var(--muted-2); background: var(--panel-2); }
   header .icon-btn.danger:hover { color: white; background: var(--danger); border-color: var(--danger); }
+
+  /* Settings modal */
+  .modal-overlay { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.55); backdrop-filter: blur(3px); display: flex; align-items: center; justify-content: center; z-index: 100; }
+  .modal { background: var(--panel); border: 1px solid var(--border-2); border-radius: 12px; box-shadow: var(--shadow); width: min(540px, 92vw); max-height: 88vh; display: flex; flex-direction: column; }
+  .modal-head { display: flex; align-items: center; justify-content: space-between; padding: 18px 22px; border-bottom: 1px solid var(--border); }
+  .modal-head h2 { margin: 0; font-size: 16px; font-weight: 600; letter-spacing: -0.01em; }
+  .modal-body { padding: 20px 22px; overflow-y: auto; display: flex; flex-direction: column; gap: 18px; }
+  .modal-foot { display: flex; gap: 10px; justify-content: flex-end; padding: 14px 22px; border-top: 1px solid var(--border); }
+  .field { display: flex; flex-direction: column; gap: 6px; }
+  .field > label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 600; }
+  .field .help { font-size: 11px; color: var(--muted-2); margin-top: -2px; }
+  .field input[type="text"], .field select { background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; color: var(--text); font: inherit; font-size: 13px; }
+  .field input[type="text"]:focus, .field select:focus { outline: none; border-color: var(--accent); }
+  .field input[type="text"]:disabled { opacity: 0.5; cursor: not-allowed; }
+  .seg { display: inline-flex; background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; padding: 3px; gap: 2px; align-self: flex-start; }
+  .seg input { display: none; }
+  .seg label { font-size: 13px; padding: 6px 14px; border-radius: 5px; cursor: pointer; color: var(--muted); user-select: none; transition: all .12s; }
+  .seg label:hover { color: var(--text); }
+  .seg input:checked + label { background: var(--panel); color: var(--text); box-shadow: 0 1px 2px rgba(0,0,0,0.15); }
+  .toggle-row { display: flex; align-items: center; gap: 10px; }
+  .toggle-row input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--accent); cursor: pointer; }
+  .toggle-row label { font-size: 13px; cursor: pointer; user-select: none; }
+  .primary { background: var(--accent); color: #062019; border: 0; padding: 8px 18px; border-radius: 6px; font-weight: 600; font-size: 13px; cursor: pointer; }
+  .primary:hover { background: var(--accent-2); }
+  .primary:disabled { opacity: 0.5; cursor: not-allowed; }
+  :root[data-theme="light"] .primary { color: #ffffff; }
   main { padding: 24px 32px 64px; max-width: 1200px; margin: 0 auto; }
   .row { display: flex; gap: 12px; align-items: center; margin-bottom: 16px; flex-wrap: wrap; }
   button { background: var(--accent); color: #062019; border: 0; padding: 10px 18px; border-radius: 8px; font-weight: 600; font-size: 13px; cursor: pointer; transition: background .15s; }
@@ -131,9 +174,72 @@
   <h1>Net<span>Audit</span></h1>
   <div class="status" id="status"><span class="dot"></span><span id="status-text">idle</span></div>
   <div class="actions">
+    <button class="icon-btn" id="settings-btn" title="Settings (⌘,)">⚙ Settings</button>
     <button class="icon-btn danger" id="quit-btn" title="Quit NetAudit (⌘Q)">Exit</button>
   </div>
 </header>
+
+<div class="modal-overlay" id="settings-modal" style="display:none;">
+  <div class="modal" role="dialog" aria-modal="true" aria-label="Settings">
+    <div class="modal-head">
+      <h2>Settings</h2>
+      <button class="icon-btn" id="settings-close" title="Close">✕</button>
+    </div>
+    <div class="modal-body">
+
+      <div class="field">
+        <label>Theme</label>
+        <div class="seg" id="theme-seg">
+          <input type="radio" name="theme" value="dark" id="theme-dark"><label for="theme-dark">Dark</label>
+          <input type="radio" name="theme" value="light" id="theme-light"><label for="theme-light">Light</label>
+          <input type="radio" name="theme" value="system" id="theme-system"><label for="theme-system">System</label>
+        </div>
+      </div>
+
+      <div class="field">
+        <label>Scan subnet</label>
+        <select id="setting-subnet-mode">
+          <option value="auto">Auto-detect (recommended)</option>
+          <option value="custom">Custom CIDR…</option>
+        </select>
+        <input type="text" id="setting-subnet-cidr" placeholder="e.g. 192.168.1.0/24" disabled>
+        <div class="help">Auto-detect picks the first private IPv4 interface that's up. Override only if you're on a non-standard layout (VPN, multi-VLAN).</div>
+      </div>
+
+      <div class="field">
+        <label>Menu bar refresh</label>
+        <select id="setting-poll">
+          <option value="1">Every minute</option>
+          <option value="2">Every 2 minutes</option>
+          <option value="5">Every 5 minutes</option>
+          <option value="10">Every 10 minutes</option>
+          <option value="30">Every 30 minutes</option>
+        </select>
+        <div class="help">How often the 🟢/🟡/🔴 menu bar dot re-checks the network.</div>
+      </div>
+
+      <div class="field">
+        <label>Speed test</label>
+        <div class="toggle-row">
+          <input type="checkbox" id="setting-speed">
+          <label for="setting-speed">Include a ~5 MB download speed test in safety checks</label>
+        </div>
+        <div class="help">Turn off on metered connections (cellular hotspot, slow café Wi-Fi) — safety check completes ~5 seconds faster.</div>
+      </div>
+
+      <div class="field">
+        <label>Reports folder</label>
+        <input type="text" id="setting-reports" placeholder="~/.netaudit/reports">
+        <div class="help">Where Save Report writes JSON snapshots. Defaults to ~/.netaudit/reports.</div>
+      </div>
+
+    </div>
+    <div class="modal-foot">
+      <button class="icon-btn" id="settings-cancel">Cancel</button>
+      <button class="primary" id="settings-save">Save</button>
+    </div>
+  </div>
+</div>
 <main>
   <div class="row">
     <button id="scan-btn">▶ Scan Devices</button>
@@ -414,7 +520,10 @@ function renderSafety(n) {
 
   // Download speed
   if (n.speed) {
-    if (n.speed.down_mbps != null) {
+    if (n.speed.skipped) {
+      tiles.push(tile('', '⚡', 'Download', 'Test skipped', 'Disabled in Settings', null,
+        detailRow('Note', n.speed.note || 'Toggle in Settings → Speed test')));
+    } else if (n.speed.down_mbps != null) {
       const m = n.speed.down_mbps;
       const headline = m >= 25 ? 'Fast' : m >= 8 ? 'Fine for HD' : m >= 2 ? 'OK for browsing' : 'Slow';
       const sev = m < 2 ? 'warn' : 'ok';
@@ -569,12 +678,118 @@ $('quit-btn').onclick = async () => {
   try {
     await fetch('/api/quit', { method: 'POST' });
   } catch {}
-  // Give the server a moment to send terminate: to NSApp.
   setTimeout(() => { try { window.close(); } catch {} }, 300);
 };
 
-refreshScans();
-refreshSafety();
+// ---------- Theme ----------
+function effectiveTheme(pref) {
+  if (pref !== 'system') return pref;
+  return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+}
+function applyTheme(pref) {
+  document.documentElement.dataset.theme = effectiveTheme(pref);
+  document.documentElement.dataset.themePref = pref;
+}
+// Re-evaluate on OS theme change when on "system"
+window.matchMedia('(prefers-color-scheme: light)').addEventListener('change', () => {
+  if (document.documentElement.dataset.themePref === 'system') applyTheme('system');
+});
+
+// ---------- Settings modal ----------
+let _settingsSnapshot = null;  // captured for Cancel-to-revert
+
+async function openSettings() {
+  const s = await api('/api/settings');
+  _settingsSnapshot = s;
+  document.querySelector(`input[name="theme"][value="${s.theme}"]`).checked = true;
+  const subnetMode = $('setting-subnet-mode');
+  const subnetInput = $('setting-subnet-cidr');
+  if (s.scan_subnet === 'auto') {
+    subnetMode.value = 'auto';
+    subnetInput.value = '';
+    subnetInput.disabled = true;
+  } else {
+    subnetMode.value = 'custom';
+    subnetInput.value = s.scan_subnet;
+    subnetInput.disabled = false;
+  }
+  $('setting-poll').value = String(s.safety_poll_minutes);
+  $('setting-speed').checked = !!s.speed_test_enabled;
+  $('setting-reports').value = s.reports_dir || '';
+  $('settings-modal').style.display = 'flex';
+}
+
+function closeSettings(revertTheme = false) {
+  if (revertTheme && _settingsSnapshot) applyTheme(_settingsSnapshot.theme);
+  $('settings-modal').style.display = 'none';
+}
+
+async function saveSettings() {
+  const themeRadio = document.querySelector('input[name="theme"]:checked');
+  const subnetMode = $('setting-subnet-mode').value;
+  const subnetCidr = $('setting-subnet-cidr').value.trim();
+  const patch = {
+    theme: themeRadio ? themeRadio.value : 'dark',
+    scan_subnet: subnetMode === 'auto' ? 'auto' : (subnetCidr || 'auto'),
+    safety_poll_minutes: parseInt($('setting-poll').value, 10),
+    speed_test_enabled: $('setting-speed').checked,
+    reports_dir: $('setting-reports').value.trim() || _settingsSnapshot.reports_dir,
+  };
+  $('settings-save').disabled = true;
+  try {
+    const saved = await fetch('/api/settings', {
+      method: 'PUT',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(patch),
+    }).then(r => r.json());
+    applyTheme(saved.theme);
+    closeSettings(false);
+  } finally {
+    $('settings-save').disabled = false;
+  }
+}
+
+// Subnet mode enable/disable the custom CIDR field
+$('setting-subnet-mode').addEventListener('change', e => {
+  $('setting-subnet-cidr').disabled = e.target.value !== 'custom';
+  if (e.target.value === 'custom') $('setting-subnet-cidr').focus();
+});
+
+// Theme radios preview immediately, before Save
+document.querySelectorAll('input[name="theme"]').forEach(r => {
+  r.addEventListener('change', e => applyTheme(e.target.value));
+});
+
+$('settings-btn').onclick = openSettings;
+$('settings-close').onclick = () => closeSettings(true);
+$('settings-cancel').onclick = () => closeSettings(true);
+$('settings-save').onclick = saveSettings;
+$('settings-modal').addEventListener('click', e => {
+  if (e.target === $('settings-modal')) closeSettings(true);
+});
+
+// Keyboard: ⌘, opens Settings, Esc closes
+document.addEventListener('keydown', e => {
+  if ((e.metaKey || e.ctrlKey) && e.key === ',') {
+    e.preventDefault();
+    openSettings();
+  } else if (e.key === 'Escape' && $('settings-modal').style.display !== 'none') {
+    closeSettings(true);
+  }
+});
+
+// ---------- Boot ----------
+(async () => {
+  // Apply persisted theme BEFORE first paint
+  try {
+    const s = await api('/api/settings');
+    applyTheme(s.theme);
+  } catch {
+    applyTheme('dark');
+  }
+  refreshScans();
+  refreshSafety();
+})();
 </script>
 </body>
 </html>

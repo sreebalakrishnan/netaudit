@@ -54,6 +54,7 @@ OPTIONS = {
         "scanner",
         "fingerprint",
         "network",
+        "settings",
         "netaudit_launcher",
         "anyio._backends._asyncio",
         "asyncio",

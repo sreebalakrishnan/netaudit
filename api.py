@@ -10,6 +10,7 @@ from starlette.requests import Request
 import db
 import network
 import scanner
+import settings as user_settings
 from config import SCAN_SUBNET
 
 
@@ -41,11 +42,12 @@ def index(request: Request):
 
 @app.post("/api/scan")
 def start_scan():
-    scan_id = db.create_scan(SCAN_SUBNET)
+    subnet = user_settings.load().get("scan_subnet", SCAN_SUBNET)
+    scan_id = db.create_scan(subnet)
 
     def run():
         try:
-            resolved, devices = scanner.scan(SCAN_SUBNET)
+            resolved, devices = scanner.scan(subnet)
             db.insert_devices(scan_id, devices)
             db.finish_scan(scan_id, len(devices), status="done")
         except Exception as e:
@@ -71,7 +73,19 @@ def list_scans():
 
 @app.get("/api/network/check")
 def network_check():
-    return network.run_all()
+    s = user_settings.load()
+    return network.run_all(speed_test_enabled=s["speed_test_enabled"])
+
+
+@app.get("/api/settings")
+def get_settings():
+    return user_settings.load()
+
+
+@app.put("/api/settings")
+async def put_settings(request: Request):
+    body = await request.json()
+    return user_settings.update(body)
 
 
 @app.post("/api/quit")
@@ -118,7 +132,7 @@ def save_report():
     ssid = (safety.get("wifi") or {}).get("ssid") or "unknown"
     slug = _re.sub(r"[^A-Za-z0-9-]", "_", ssid)[:24] or "unknown"
     ts = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
-    reports_dir = Path.home() / ".netaudit" / "reports"
+    reports_dir = Path(user_settings.load()["reports_dir"]).expanduser()
     reports_dir.mkdir(parents=True, exist_ok=True)
     path = reports_dir / f"{ts}_{slug}.json"
     path.write_text(_json.dumps({

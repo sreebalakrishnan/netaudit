@@ -470,7 +470,7 @@ def _prime_arp(gateway: str | None):
         pass
 
 
-def run_all() -> dict:
+def run_all(speed_test_enabled: bool = True) -> dict:
     """Run every check in parallel; ~5-7s end-to-end."""
     gateway = get_gateway()
 
@@ -481,7 +481,7 @@ def run_all() -> dict:
         f_portal = ex.submit(check_captive_portal)
         f_gw_lat = ex.submit(ping_latency, gateway, 4) if gateway else None
         f_inet_lat = ex.submit(ping_latency, "1.1.1.1", 4)
-        f_speed = ex.submit(speed_test, 5_000_000)
+        f_speed = ex.submit(speed_test, 5_000_000) if speed_test_enabled else None
         f_hops = ex.submit(traceroute_hops, "1.1.1.1", 12)
         f_vpn = ex.submit(detect_vpn)
         f_pr = ex.submit(detect_private_relay)
@@ -492,7 +492,7 @@ def run_all() -> dict:
         portal = f_portal.result()
         gw_lat = f_gw_lat.result() if f_gw_lat else {"host": None, "error": "no gateway"}
         inet_lat = f_inet_lat.result()
-        speed = f_speed.result()
+        speed = f_speed.result() if f_speed else {"skipped": True, "note": "Disabled in Settings"}
         hops = f_hops.result()
         vpn = f_vpn.result()
         relay = f_pr.result()

@@ -37,8 +37,8 @@ from WebKit import WKWebView, WKWebViewConfiguration
 from config import API_HOST, API_PORT
 
 SEVERITY_ICONS = {"ok": "🟢", "warn": "🟡", "danger": "🔴"}
-POLL_INTERVAL_SECONDS = 120
 POLL_TIMEOUT_SECONDS = 30
+POLL_INTERVAL_FALLBACK = 120  # used only if settings unreadable
 
 
 def find_free_port(host: str, preferred: int, attempts: int = 10) -> int:
@@ -221,7 +221,13 @@ class NetAuditApp(rumps.App):
         time.sleep(2)
         while True:
             self._poll_once()
-            time.sleep(POLL_INTERVAL_SECONDS)
+            # Re-read settings each iteration so changes apply without restart
+            try:
+                from settings import load as _load_settings
+                interval = max(60, int(_load_settings()["safety_poll_minutes"]) * 60)
+            except Exception:
+                interval = POLL_INTERVAL_FALLBACK
+            time.sleep(interval)
 
     def _poll_once(self):
         try:
