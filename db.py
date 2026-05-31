@@ -60,6 +60,7 @@ _NEW_COLUMNS = [
     ("ssdp", "TEXT"),
     ("http_titles", "TEXT"),
     ("apple_models", "TEXT"),
+    ("admin_hint", "TEXT"),
 ]
 
 
@@ -111,8 +112,9 @@ def insert_devices(scan_id: int, devices: list[dict]):
         con.executemany(
             """INSERT OR REPLACE INTO devices
                (scan_id, ip, mac, hostname, vendor, device_type, brand, model,
-                confidence, services, open_ports, ssdp, http_titles, apple_models)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                confidence, services, open_ports, ssdp, http_titles, apple_models,
+                admin_hint)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             [
                 (
                     scan_id,
@@ -124,6 +126,7 @@ def insert_devices(scan_id: int, devices: list[dict]):
                     json.dumps(d.get("ssdp") or []),
                     json.dumps(d.get("http_titles") or []),
                     json.dumps(d.get("apple_models") or []),
+                    json.dumps(d.get("admin_hint")) if d.get("admin_hint") else None,
                 )
                 for d in devices
             ],
@@ -202,7 +205,8 @@ def get_devices(scan_id: int) -> list[dict]:
     with connect() as con:
         rows = con.execute(
             """SELECT ip, mac, hostname, vendor, device_type, brand, model,
-                      confidence, services, open_ports, ssdp, http_titles, apple_models
+                      confidence, services, open_ports, ssdp, http_titles, apple_models,
+                      admin_hint
                FROM devices WHERE scan_id = ? ORDER BY ip""",
             (scan_id,),
         ).fetchall()
@@ -212,5 +216,8 @@ def get_devices(scan_id: int) -> list[dict]:
             for k in ("services", "open_ports", "ssdp", "http_titles", "apple_models"):
                 try: d[k] = json.loads(d[k]) if d[k] else []
                 except Exception: d[k] = []
+            if d.get("admin_hint"):
+                try: d["admin_hint"] = json.loads(d["admin_hint"])
+                except Exception: d["admin_hint"] = None
             out.append(d)
         return out

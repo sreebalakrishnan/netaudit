@@ -22,6 +22,57 @@ APPLE_MODEL_PREFIXES = (
     "AppleTV", "AudioAccessory", "Watch",
 )
 
+# Brand-specific guidance for "where is the per-device bandwidth view in the
+# admin UI". Used to populate the gateway's device-card detail so the user
+# can click straight to the right page. None for brands with no local UI.
+ROUTER_ADMIN_HINTS = {
+    "TP-Link": {
+        "where": "Network → Clients · sort by Bandwidth Usage",
+        "note": "If this is a Deco mesh, the Deco iOS/Android app has better per-device stats.",
+    },
+    "ASUS": {
+        "where": "Network Map → Devices · sort by Real-Time Traffic. Or AiProtection → Traffic Analyzer.",
+        "note": None,
+    },
+    "Netgear": {
+        "where": "Attached Devices · Traffic Meter.",
+        "note": None,
+    },
+    "Linksys": {
+        "where": "Network Map → click a device for Activity.",
+        "note": None,
+    },
+    "Ubiquiti": {
+        "where": "Clients · sort by 'TX/RX Activity'. The UniFi controller has richer per-client graphs.",
+        "note": None,
+    },
+    "eero": {
+        "where": "(no local admin page) — open the eero app → Activity.",
+        "note": "eero is cloud-only, there's nothing to log into at the gateway IP.",
+        "no_local_ui": True,
+    },
+    "Synology": {
+        "where": "Network Center → Traffic.",
+        "note": None,
+    },
+}
+
+
+def router_admin_hint(brand: str | None, gateway_ip: str | None) -> dict | None:
+    """Return a small hint dict for the gateway's device card, or None."""
+    if not gateway_ip:
+        return None
+    hint = ROUTER_ADMIN_HINTS.get(brand or "")
+    if hint is None:
+        return {
+            "url": f"http://{gateway_ip}/",
+            "where": "Look for 'Connected devices' or 'Network Map' / 'Traffic'.",
+            "note": None,
+        }
+    if hint.get("no_local_ui"):
+        return {"url": None, "where": hint["where"], "note": hint.get("note")}
+    return {"url": f"http://{gateway_ip}/", "where": hint["where"], "note": hint.get("note")}
+
 # Service types we care about (mDNS / DNS-SD)
 MDNS_SERVICES = [
     "_apple-mobdev2._tcp.local.",
@@ -310,7 +361,11 @@ def classify(
         elif _has_any(servers, ["netgear"]): brand = "Netgear"
         elif _has_any(servers, ["tp-link"]): brand = "TP-Link"
         elif _has_any(servers, ["unifi", "ubiquiti"]): brand = "Ubiquiti"
-        return _result("router", brand, "Router", "high")
+        out = _result("router", brand, "Router", "high")
+        hint = router_admin_hint(brand, gateway_ip)
+        if hint:
+            out["admin_hint"] = hint
+        return out
 
     # ---- Apple hardware model identifier (most specific signal) ----
     # When mDNS TXT records expose the device model (e.g. "iPhone15,2",

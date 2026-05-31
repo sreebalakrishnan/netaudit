@@ -195,5 +195,6 @@ def scan(subnet: str = "auto") -> tuple[str, list[dict]]:
             "ssdp": sorted(sig.ssdp_servers)[:3],
             "http_titles": sorted(sig.http_titles),
             "apple_models": sorted(sig.apple_models),
+            "admin_hint": info.get("admin_hint"),
         })
     return str(network), devices

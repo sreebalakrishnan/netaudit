@@ -214,6 +214,13 @@
   .card.expanded .card-detail { display: block; }
   .card-detail .row { gap: 6px; margin-bottom: 4px; }
   .card-detail strong { color: var(--text); font-weight: 500; }
+  .admin-hint { background: var(--panel-2); border: 1px solid var(--border-2); border-left: 3px solid var(--accent); border-radius: 6px; padding: 10px 12px; margin: 6px 0 12px; font-family: -apple-system, system-ui, sans-serif; }
+  .admin-hint-head { font-size: 12px; font-weight: 600; color: var(--text); margin-bottom: 6px; }
+  .admin-open { display: inline-block; font-family: "SF Mono", ui-monospace, monospace; font-size: 11px; color: var(--accent); text-decoration: none; padding: 4px 8px; background: rgba(110, 231, 183, 0.08); border: 1px solid rgba(110, 231, 183, 0.25); border-radius: 4px; }
+  .admin-open:hover { background: rgba(110, 231, 183, 0.15); border-color: var(--accent); }
+  .admin-cloud { font-size: 11px; color: var(--muted); font-style: italic; }
+  .admin-where { font-size: 11px; color: var(--text); margin-top: 6px; line-height: 1.4; font-family: -apple-system, system-ui, sans-serif; }
+  .admin-note { font-size: 11px; color: var(--muted); margin-top: 4px; font-style: italic; line-height: 1.4; }
 </style>
 </head>
 <body>
@@ -421,6 +428,19 @@ function renderStats(devices) {
   });
 }
 
+function renderAdminHint(h) {
+  if (!h) return '';
+  const linkBlock = h.url
+    ? `<a href="${h.url}" target="_blank" rel="noopener" class="admin-open">Open admin → ${h.url}</a>`
+    : `<span class="admin-cloud">(no local admin page)</span>`;
+  return `<div class="admin-hint">
+    <div class="admin-hint-head">📊 Find what's using the bandwidth</div>
+    ${linkBlock}
+    <div class="admin-where">${h.where}</div>
+    ${h.note ? `<div class="admin-note">${h.note}</div>` : ''}
+  </div>`;
+}
+
 function renderGrid(devices) {
   const c = $('grid');
   const filtered = activeFilter ? devices.filter(d => (d.device_type || 'unknown') === activeFilter) : devices;
@@ -448,6 +468,7 @@ function renderGrid(devices) {
       </div>
       <div class="chips">${ports}${services}</div>
       <div class="card-detail">
+        ${d.admin_hint ? renderAdminHint(d.admin_hint) : ''}
         <div class="row"><strong>Services:</strong> ${allSvc}</div>
         <div class="row"><strong>Ports:</strong> ${allPorts}</div>
         ${(d.apple_models || []).length ? `<div class="row"><strong>Apple model:</strong> ${(d.apple_models || []).join(', ')}</div>` : ''}
