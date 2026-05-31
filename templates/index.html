@@ -72,6 +72,46 @@
   .primary:hover { background: var(--accent-2); }
   .primary:disabled { opacity: 0.5; cursor: not-allowed; }
   :root[data-theme="light"] .primary { color: #ffffff; }
+
+  /* Reports modal */
+  .modal-wide { width: min(900px, 96vw); max-height: 90vh; }
+  .reports-intro { margin: 0 0 14px; font-size: 12px; color: var(--muted); }
+  .reports-status { font-size: 11px; color: var(--muted); margin-right: auto; }
+  .report-row { display: grid; grid-template-columns: 20px 14px 1fr auto auto auto; gap: 10px; align-items: center; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel-2); margin-bottom: 8px; transition: border-color .15s; }
+  .report-row:hover { border-color: var(--border-2); }
+  .report-row.selected { border-color: var(--accent); }
+  .report-row input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent); cursor: pointer; margin: 0; }
+  .report-row .rdot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted-2); }
+  .report-row .rdot.ok { background: var(--accent); }
+  .report-row .rdot.warn { background: var(--warn); }
+  .report-row .rdot.danger { background: var(--danger); }
+  .report-meta { min-width: 0; }
+  .report-meta .title { font-size: 13px; font-weight: 600; }
+  .report-meta .sub { font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .report-row .verdict-tag { font-size: 11px; color: var(--muted); max-width: 240px; text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .report-row .row-btn { background: transparent; border: 1px solid var(--border-2); border-radius: 5px; color: var(--muted); font-size: 11px; padding: 4px 8px; cursor: pointer; font-weight: 500; }
+  .report-row .row-btn:hover { color: var(--text); border-color: var(--muted-2); }
+  .report-row .row-btn.danger:hover { color: white; background: var(--danger); border-color: var(--danger); }
+
+  /* Diff view */
+  .report-detail { background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
+  .report-detail h3 { margin: 0 0 6px; font-size: 14px; font-weight: 600; }
+  .report-detail .timestamp { font-size: 11px; color: var(--muted); font-family: "SF Mono", monospace; }
+  .report-detail .verdict-block { margin: 14px 0; padding: 12px 14px; background: var(--panel); border: 1px solid var(--border); border-left: 3px solid var(--muted-2); border-radius: 6px; }
+  .report-detail .verdict-block.ok { border-left-color: var(--accent); }
+  .report-detail .verdict-block.warn { border-left-color: var(--warn); }
+  .report-detail .verdict-block.danger { border-left-color: var(--danger); }
+  .report-detail .verdict-head { font-weight: 600; font-size: 13px; margin-bottom: 6px; }
+  .report-detail .verdict-list { margin: 0; padding-left: 18px; font-size: 12px; color: var(--text); }
+  .report-detail .verdict-list li { margin-bottom: 3px; }
+  .report-detail .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-top: 10px; font-size: 12px; }
+  .report-detail .stat { background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; }
+  .report-detail .stat .k { font-size: 10px; text-transform: uppercase; color: var(--muted); letter-spacing: 0.05em; }
+  .report-detail .stat .v { font-weight: 600; margin-top: 2px; font-size: 13px; }
+  .report-detail .stat.diff { border-color: var(--warn); }
+  .report-detail .stat.diff .k { color: var(--warn); }
+  .compare-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  @media (max-width: 720px) { .compare-grid { grid-template-columns: 1fr; } }
   main { padding: 24px 32px 64px; max-width: 1200px; margin: 0 auto; }
   .row { display: flex; gap: 12px; align-items: center; margin-bottom: 16px; flex-wrap: wrap; }
   button { background: var(--accent); color: #062019; border: 0; padding: 10px 18px; border-radius: 8px; font-weight: 600; font-size: 13px; cursor: pointer; transition: background .15s; }
@@ -179,6 +219,7 @@
   <h1>Net<span>Audit</span></h1>
   <div class="status" id="status"><span class="dot"></span><span id="status-text">idle</span></div>
   <div class="actions">
+    <button class="icon-btn" id="reports-btn" title="Saved reports (⌘R)">📂 Reports</button>
     <button class="icon-btn" id="settings-btn" title="Settings (⌘,)">⚙ Settings</button>
     <button class="icon-btn danger" id="quit-btn" title="Quit NetAudit (⌘Q)">Exit</button>
   </div>
@@ -242,6 +283,25 @@
     <div class="modal-foot">
       <button class="icon-btn" id="settings-cancel">Cancel</button>
       <button class="primary" id="settings-save">Save</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="reports-modal" style="display:none;">
+  <div class="modal modal-wide" role="dialog" aria-modal="true" aria-label="Reports">
+    <div class="modal-head">
+      <h2>Saved Reports</h2>
+      <button class="icon-btn" id="reports-close" title="Close">✕</button>
+    </div>
+    <div class="modal-body">
+      <p class="reports-intro">Snapshots from Save Report (⌘S). Select two to see what changed between networks.</p>
+      <div id="reports-list"></div>
+      <div id="reports-compare" style="display:none;"></div>
+    </div>
+    <div class="modal-foot">
+      <span id="reports-status" class="reports-status"></span>
+      <button class="icon-btn" id="reports-back-btn" style="display:none;">← Back to list</button>
+      <button class="primary" id="reports-compare-btn" disabled>Compare 2 selected ▶</button>
     </div>
   </div>
 </div>
@@ -844,15 +904,224 @@ $('settings-modal').addEventListener('click', e => {
   if (e.target === $('settings-modal')) closeSettings(true);
 });
 
-// Keyboard: ⌘, opens Settings, Esc closes
+// Keyboard: ⌘, opens Settings, ⌘R opens Reports, Esc closes either
 document.addEventListener('keydown', e => {
   if ((e.metaKey || e.ctrlKey) && e.key === ',') {
     e.preventDefault();
     openSettings();
-  } else if (e.key === 'Escape' && $('settings-modal').style.display !== 'none') {
-    closeSettings(true);
+  } else if ((e.metaKey || e.ctrlKey) && (e.key === 'r' || e.key === 'R')) {
+    e.preventDefault();
+    openReports();
+  } else if (e.key === 'Escape') {
+    if ($('settings-modal').style.display !== 'none') closeSettings(true);
+    if ($('reports-modal').style.display !== 'none') closeReports();
   }
 });
+
+// ---------- Reports modal ----------
+let _selectedReports = new Set();
+
+async function openReports() {
+  $('reports-modal').style.display = 'flex';
+  $('reports-compare').style.display = 'none';
+  $('reports-list').style.display = 'block';
+  $('reports-back-btn').style.display = 'none';
+  _selectedReports.clear();
+  await loadReportsList();
+}
+
+function closeReports() {
+  $('reports-modal').style.display = 'none';
+  _selectedReports.clear();
+}
+
+async function loadReportsList() {
+  $('reports-list').innerHTML = '<div class="empty">Loading…</div>';
+  try {
+    const { reports } = await api('/api/reports');
+    if (!reports || reports.length === 0) {
+      $('reports-list').innerHTML = '<div class="empty">No saved reports yet. Save one with ⌘S after a scan.</div>';
+      updateCompareButton();
+      return;
+    }
+    $('reports-list').innerHTML = reports.map(r => {
+      const sev = r.verdict_severity || '';
+      const ts = formatReportDate(r.timestamp_utc);
+      const dev = r.device_count != null ? `${r.device_count} devices` : '';
+      return `<div class="report-row" data-fn="${r.filename}">
+        <input type="checkbox" class="report-select" data-fn="${r.filename}">
+        <div class="rdot ${sev}"></div>
+        <div class="report-meta">
+          <div class="title">${ts} · "${r.ssid}"</div>
+          <div class="sub">${dev} · ${r.size_bytes ? (r.size_bytes/1024).toFixed(1) + ' KB' : ''}</div>
+        </div>
+        <div class="verdict-tag">${r.verdict_headline || ''}</div>
+        <button class="row-btn" data-act="view" data-fn="${r.filename}">View</button>
+        <button class="row-btn danger" data-act="delete" data-fn="${r.filename}" title="Delete">×</button>
+      </div>`;
+    }).join('');
+    // Wire up
+    $('reports-list').querySelectorAll('.report-select').forEach(cb => {
+      cb.onchange = (e) => {
+        const fn = e.target.dataset.fn;
+        const row = e.target.closest('.report-row');
+        if (e.target.checked) {
+          if (_selectedReports.size >= 2) {
+            // Allow max 2 — uncheck this if already at 2
+            e.target.checked = false;
+            return;
+          }
+          _selectedReports.add(fn);
+          row.classList.add('selected');
+        } else {
+          _selectedReports.delete(fn);
+          row.classList.remove('selected');
+        }
+        updateCompareButton();
+      };
+    });
+    $('reports-list').querySelectorAll('[data-act="view"]').forEach(btn => {
+      btn.onclick = () => viewReport(btn.dataset.fn);
+    });
+    $('reports-list').querySelectorAll('[data-act="delete"]').forEach(btn => {
+      btn.onclick = async () => {
+        if (!confirm(`Delete ${btn.dataset.fn}?`)) return;
+        await fetch(`/api/reports/${btn.dataset.fn}`, { method: 'DELETE' });
+        _selectedReports.delete(btn.dataset.fn);
+        await loadReportsList();
+        updateCompareButton();
+      };
+    });
+    updateCompareButton();
+  } catch (e) {
+    $('reports-list').innerHTML = `<div class="empty">Couldn't load reports: ${e.message}</div>`;
+  }
+}
+
+function formatReportDate(ts) {
+  // ts is "20260530-161729" or ISO
+  if (!ts) return '';
+  if (/^\d{8}-\d{6}$/.test(ts)) {
+    return `${ts.slice(0,4)}-${ts.slice(4,6)}-${ts.slice(6,8)} ${ts.slice(9,11)}:${ts.slice(11,13)}`;
+  }
+  try { return new Date(ts).toLocaleString(); } catch { return ts; }
+}
+
+function updateCompareButton() {
+  const btn = $('reports-compare-btn');
+  const status = $('reports-status');
+  const n = _selectedReports.size;
+  btn.disabled = n !== 2;
+  status.textContent = n === 0 ? '' : `${n}/2 selected for compare`;
+}
+
+async function viewReport(filename) {
+  $('reports-list').style.display = 'none';
+  $('reports-compare').style.display = 'block';
+  $('reports-back-btn').style.display = 'inline-block';
+  $('reports-compare').innerHTML = '<div class="empty">Loading…</div>';
+  try {
+    const r = await api(`/api/reports/${filename}`);
+    $('reports-compare').innerHTML = renderReportDetail(r);
+  } catch (e) {
+    $('reports-compare').innerHTML = `<div class="empty">Couldn't load: ${e.message}</div>`;
+  }
+}
+
+function renderReportDetail(r, otherStats = null) {
+  const v = (r.safety || {}).verdict || {};
+  const sev = v.severity || '';
+  const wifi = (r.safety || {}).wifi || {};
+  const speed = (r.safety || {}).speed || {};
+  const latInet = ((r.safety || {}).latency || {}).internet || {};
+  const portal = (r.safety || {}).captive_portal || {};
+  const pub = (r.safety || {}).public || {};
+  const dns = ((r.safety || {}).dns || {}).classification || {};
+  const arp = (r.safety || {}).arp_check || {};
+  const scan = r.scan || {};
+  const stats = {
+    encryption: wifi.encryption || '—',
+    speed: speed.down_mbps != null ? `${speed.down_mbps} Mbps` : (speed.skipped ? 'skipped' : '—'),
+    latency: latInet.avg_ms != null ? `${latInet.avg_ms.toFixed(0)} ms` : '—',
+    jitter: latInet.jitter_ms != null ? `${latInet.jitter_ms.toFixed(0)} ms` : '—',
+    dns: dns.note || '—',
+    public_ip: pub.ip || '—',
+    location: [pub.city, pub.country].filter(Boolean).join(', ') || '—',
+    portal: portal.status || '—',
+    arp: arp.severity || '—',
+    devices: scan.device_count != null ? String(scan.device_count) : '—',
+  };
+  const lis = (v.sentences || []).map(s => `<li>${s}</li>`).join('');
+  const statsHtml = Object.entries(stats).map(([k, val]) => {
+    const isDiff = otherStats && otherStats[k] !== val;
+    return `<div class="stat ${isDiff ? 'diff' : ''}"><div class="k">${k.replace('_', ' ')}</div><div class="v">${val}</div></div>`;
+  }).join('');
+  return `<div class="report-detail">
+    <h3>"${r.ssid || '(unknown)'}"</h3>
+    <div class="timestamp">${formatReportDate(r.timestamp_utc)}</div>
+    <div class="verdict-block ${sev}">
+      <div class="verdict-head">${v.headline || ''}</div>
+      <ul class="verdict-list">${lis}</ul>
+    </div>
+    <div class="stats">${statsHtml}</div>
+  </div>`;
+}
+
+async function compareReports() {
+  const fns = Array.from(_selectedReports);
+  if (fns.length !== 2) return;
+  $('reports-list').style.display = 'none';
+  $('reports-compare').style.display = 'block';
+  $('reports-back-btn').style.display = 'inline-block';
+  $('reports-compare').innerHTML = '<div class="empty">Loading both…</div>';
+  try {
+    const [a, b] = await Promise.all(fns.map(fn => api(`/api/reports/${fn}`)));
+    // Build stats for highlighting diffs
+    const statsA = extractStats(a);
+    const statsB = extractStats(b);
+    $('reports-compare').innerHTML = `<div class="compare-grid">
+      ${renderReportDetail(a, statsB)}
+      ${renderReportDetail(b, statsA)}
+    </div>`;
+  } catch (e) {
+    $('reports-compare').innerHTML = `<div class="empty">Couldn't load: ${e.message}</div>`;
+  }
+}
+
+function extractStats(r) {
+  const wifi = (r.safety || {}).wifi || {};
+  const speed = (r.safety || {}).speed || {};
+  const latInet = ((r.safety || {}).latency || {}).internet || {};
+  const portal = (r.safety || {}).captive_portal || {};
+  const pub = (r.safety || {}).public || {};
+  const dns = ((r.safety || {}).dns || {}).classification || {};
+  const arp = (r.safety || {}).arp_check || {};
+  const scan = r.scan || {};
+  return {
+    encryption: wifi.encryption || '—',
+    speed: speed.down_mbps != null ? `${speed.down_mbps} Mbps` : (speed.skipped ? 'skipped' : '—'),
+    latency: latInet.avg_ms != null ? `${latInet.avg_ms.toFixed(0)} ms` : '—',
+    jitter: latInet.jitter_ms != null ? `${latInet.jitter_ms.toFixed(0)} ms` : '—',
+    dns: dns.note || '—',
+    public_ip: pub.ip || '—',
+    location: [pub.city, pub.country].filter(Boolean).join(', ') || '—',
+    portal: portal.status || '—',
+    arp: arp.severity || '—',
+    devices: scan.device_count != null ? String(scan.device_count) : '—',
+  };
+}
+
+$('reports-btn').onclick = openReports;
+$('reports-close').onclick = closeReports;
+$('reports-modal').addEventListener('click', e => {
+  if (e.target === $('reports-modal')) closeReports();
+});
+$('reports-compare-btn').onclick = compareReports;
+$('reports-back-btn').onclick = () => {
+  $('reports-list').style.display = 'block';
+  $('reports-compare').style.display = 'none';
+  $('reports-back-btn').style.display = 'none';
+};
 
 // ---------- Boot ----------
 (async () => {

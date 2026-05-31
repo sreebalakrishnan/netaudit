@@ -115,6 +115,63 @@ async def put_settings(request: Request):
     return user_settings.update(body)
 
 
+@app.get("/api/reports")
+def list_reports():
+    """List saved reports with summary info — for the Reports view + diff."""
+    from pathlib import Path
+    reports_dir = Path(user_settings.load()["reports_dir"]).expanduser()
+    if not reports_dir.exists():
+        return {"reports": []}
+    out = []
+    for path in sorted(reports_dir.glob("*.json"), reverse=True):
+        try:
+            data = _json.loads(path.read_text())
+        except Exception:
+            continue
+        verdict = (data.get("safety") or {}).get("verdict") or {}
+        scan = data.get("scan") or {}
+        out.append({
+            "filename": path.name,
+            "ssid": data.get("ssid") or "(unknown)",
+            "timestamp_utc": data.get("timestamp_utc") or path.stem.split("_")[0],
+            "verdict_severity": verdict.get("severity"),
+            "verdict_headline": verdict.get("headline"),
+            "device_count": scan.get("device_count") if scan else None,
+            "size_bytes": path.stat().st_size,
+        })
+    return {"reports": out}
+
+
+@app.get("/api/reports/{filename}")
+def get_report(filename: str):
+    """Return a saved report by filename."""
+    from pathlib import Path
+    if "/" in filename or ".." in filename or not filename.endswith(".json"):
+        raise HTTPException(400, "invalid filename")
+    reports_dir = Path(user_settings.load()["reports_dir"]).expanduser()
+    path = reports_dir / filename
+    if not path.exists():
+        raise HTTPException(404, "report not found")
+    try:
+        return _json.loads(path.read_text())
+    except Exception as e:
+        raise HTTPException(500, f"failed to parse report: {e}")
+
+
+@app.delete("/api/reports/{filename}")
+def delete_report(filename: str):
+    """Delete a saved report."""
+    from pathlib import Path
+    if "/" in filename or ".." in filename or not filename.endswith(".json"):
+        raise HTTPException(400, "invalid filename")
+    reports_dir = Path(user_settings.load()["reports_dir"]).expanduser()
+    path = reports_dir / filename
+    if not path.exists():
+        raise HTTPException(404, "report not found")
+    path.unlink()
+    return {"deleted": filename}
+
+
 @app.post("/api/quit")
 def quit_app():
     """Trigger a clean macOS app termination from the UI Exit button."""
