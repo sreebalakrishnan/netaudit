@@ -292,6 +292,7 @@ def classify(
     signals: Signals,
     gateway_ip: str | None,
     gateway_mac: str | None = None,
+    gateway_info: dict | None = None,
 ) -> dict:
     """Rule-based classification. Returns dict with type/brand/model/confidence."""
     services = signals.services
@@ -448,8 +449,13 @@ def classify(
 
     # ---- Mesh node (same OUI as the gateway) ----
     if gateway_mac and mac and _oui(mac) == _oui(gateway_mac):
-        # Same vendor prefix as the router — almost always a mesh extender / AP
-        return _result("router", vendor, "Mesh node / access point", "high")
+        # Same vendor prefix as the router — almost always a mesh extender / AP.
+        # Inherit the gateway's identified brand (SSDP / HTTP-title often reveals
+        # "TP-Link" / "Netgear" etc. even when the OUI database doesn't know it).
+        gw_brand = (gateway_info or {}).get("brand") if gateway_info else None
+        brand = gw_brand or vendor
+        model = f"{gw_brand} mesh node" if gw_brand else "Mesh node / access point"
+        return _result("router", brand, model, "high")
 
     # ---- HTTP title hints (for everything that didn't match above) ----
     titles_blob = " ".join(signals.http_titles).lower()

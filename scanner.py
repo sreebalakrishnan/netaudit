@@ -167,6 +167,9 @@ def scan(subnet: str = "auto") -> tuple[str, list[dict]]:
     signals = _merge_signals(mdns_sig, ssdp_sig, port_sig, title_sig)
 
     devices: list[dict] = []
+    # Sort so the gateway (typically .1) classifies first; its result is then
+    # passed into subsequent calls so mesh nodes can inherit the gateway brand.
+    gateway_info: dict | None = None
     for ip in sorted(ips, key=lambda s: tuple(int(o) for o in s.split("."))):
         mac = arp.get(ip)
         sig = signals.get(ip, Signals())
@@ -174,7 +177,10 @@ def scan(subnet: str = "auto") -> tuple[str, list[dict]]:
             ip=ip, mac=mac, hostname=hostnames.get(ip),
             vendor=vendor_for_mac(mac), signals=sig,
             gateway_ip=gateway, gateway_mac=gateway_mac,
+            gateway_info=gateway_info,
         )
+        if gateway and ip == gateway:
+            gateway_info = info
         devices.append({
             "ip": ip,
             "mac": mac,
