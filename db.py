@@ -32,8 +32,21 @@ CREATE TABLE IF NOT EXISTS devices (
     UNIQUE(scan_id, ip)
 );
 
+-- One row per network we've connected to, keyed by gateway MAC (stable per AP,
+-- available without Location Services unlike SSID which gets redacted on Sonoma+).
+CREATE TABLE IF NOT EXISTS network_visits (
+    gateway_mac TEXT PRIMARY KEY,
+    ssid TEXT,
+    first_seen TEXT NOT NULL,
+    last_seen TEXT NOT NULL,
+    visit_count INTEGER NOT NULL DEFAULT 1,
+    last_verdict_severity TEXT,
+    last_verdict_headline TEXT
+);
+
 CREATE INDEX IF NOT EXISTS idx_devices_scan ON devices(scan_id);
 CREATE INDEX IF NOT EXISTS idx_scans_started ON scans(started_at DESC);
+CREATE INDEX IF NOT EXISTS idx_visits_seen ON network_visits(last_seen DESC);
 """
 
 # Columns added after v0.1 — idempotent ALTERs
@@ -127,6 +140,60 @@ def list_scans(limit: int = 20) -> list[dict]:
     with connect() as con:
         rows = con.execute(
             "SELECT * FROM scans ORDER BY started_at DESC LIMIT ?", (limit,)
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def record_visit(
+    gateway_mac: str,
+    ssid: str | None,
+    verdict_severity: str | None,
+    verdict_headline: str | None,
+) -> dict:
+    """Upsert a network_visits row keyed by gateway MAC. Returns the row state."""
+    now = _now()
+    with connect() as con:
+        row = con.execute(
+            "SELECT visit_count, first_seen FROM network_visits WHERE gateway_mac = ?",
+            (gateway_mac,),
+        ).fetchone()
+        if row:
+            count = row["visit_count"] + 1
+            first_seen = row["first_seen"]
+            con.execute(
+                """UPDATE network_visits
+                   SET ssid = ?, last_seen = ?, visit_count = ?,
+                       last_verdict_severity = ?, last_verdict_headline = ?
+                   WHERE gateway_mac = ?""",
+                (ssid, now, count, verdict_severity, verdict_headline, gateway_mac),
+            )
+        else:
+            count = 1
+            first_seen = now
+            con.execute(
+                """INSERT INTO network_visits
+                   (gateway_mac, ssid, first_seen, last_seen, visit_count,
+                    last_verdict_severity, last_verdict_headline)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (gateway_mac, ssid, now, now, count,
+                 verdict_severity, verdict_headline),
+            )
+    return {
+        "gateway_mac": gateway_mac,
+        "ssid": ssid,
+        "first_seen": first_seen,
+        "last_seen": now,
+        "visit_count": count,
+        "last_verdict_severity": verdict_severity,
+        "last_verdict_headline": verdict_headline,
+    }
+
+
+def list_visits(limit: int = 30) -> list[dict]:
+    with connect() as con:
+        rows = con.execute(
+            "SELECT * FROM network_visits ORDER BY last_seen DESC LIMIT ?",
+            (limit,),
         ).fetchall()
         return [dict(r) for r in rows]
 

@@ -80,10 +80,39 @@ def network_check(live_speed: bool = False):
     When the UI is showing live speed via /api/speed/stream, it passes
     live_speed=true so we skip the duplicate speed test here — the UI
     merges the stream's final value into the response client-side.
+
+    Also records a network_visits row keyed by gateway MAC so the verdict
+    tile can show "you've been here N times before".
     """
     s = user_settings.load()
     enabled = s["speed_test_enabled"] and not live_speed
-    return network.run_all(speed_test_enabled=enabled)
+    result = network.run_all(speed_test_enabled=enabled)
+
+    # Record visit for the "first time here" / "visited N times" hint
+    gateway = result.get("gateway")
+    if gateway:
+        try:
+            arp = scanner.read_arp_table()
+            gw_mac = arp.get(gateway)
+            if gw_mac:
+                ssid = (result.get("wifi") or {}).get("ssid")
+                if ssid == "<redacted>":
+                    ssid = None
+                verdict = result.get("verdict") or {}
+                result["network_visit"] = db.record_visit(
+                    gateway_mac=gw_mac,
+                    ssid=ssid,
+                    verdict_severity=verdict.get("severity"),
+                    verdict_headline=verdict.get("headline"),
+                )
+        except Exception:
+            pass  # visit tracking is best-effort; never block the check
+    return result
+
+
+@app.get("/api/networks")
+def list_networks():
+    return {"networks": db.list_visits()}
 
 
 @app.get("/api/speed/stream")

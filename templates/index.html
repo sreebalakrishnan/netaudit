@@ -148,6 +148,8 @@
   .verdict ul { margin: 8px 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; }
   .verdict li { font-size: 14px; color: var(--text); padding-left: 18px; position: relative; }
   .verdict li::before { content: '·'; position: absolute; left: 6px; color: var(--muted); font-weight: 700; }
+  .verdict .visit-note { margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--border-2); font-size: 12px; color: var(--muted); }
+  .verdict .visit-note strong { color: var(--text); font-weight: 600; }
 
   /* Safety strip */
   .safety { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; margin-bottom: 16px; }
@@ -486,10 +488,32 @@ function tile(severity, icon, label, value, sub, badge, detail) {
   </div>`;
 }
 
-function renderVerdict(v) {
+function humanAgo(iso) {
+  if (!iso) return '';
+  let t;
+  try { t = new Date(iso).getTime(); } catch { return ''; }
+  if (!t || isNaN(t)) return '';
+  const s = (Date.now() - t) / 1000;
+  if (s < 60) return 'just now';
+  if (s < 3600) return `${Math.floor(s/60)} min ago`;
+  if (s < 86400) return `${Math.floor(s/3600)} h ago`;
+  if (s < 86400 * 30) return `${Math.floor(s/86400)} days ago`;
+  return `${Math.floor(s/86400/30)} months ago`;
+}
+
+function renderVerdict(v, visit) {
   const host = $('verdict-host');
   if (!v) { host.innerHTML = ''; return; }
   const lis = (v.sentences || []).map(s => `<li>${s}</li>`).join('');
+  let visitNote = '';
+  if (visit) {
+    if (visit.visit_count > 1) {
+      const ago = humanAgo(visit.first_seen);
+      visitNote = `<div class="visit-note">👋 You've checked this network <strong>${visit.visit_count}</strong> times · first seen ${ago}</div>`;
+    } else {
+      visitNote = `<div class="visit-note">👋 First time here.</div>`;
+    }
+  }
   host.innerHTML = `<div class="verdict ${v.severity}">
     <div class="head">
       <div class="dot"></div>
@@ -497,6 +521,7 @@ function renderVerdict(v) {
       ${v.ssid ? `<div class="ssid">on "${v.ssid}"</div>` : ''}
     </div>
     <ul>${lis}</ul>
+    ${visitNote}
   </div>`;
 }
 
@@ -506,7 +531,7 @@ function detailRow(label, value) {
 }
 
 function renderSafety(n) {
-  renderVerdict(n.verdict);
+  renderVerdict(n.verdict, n.network_visit);
   const c = $('safety');
   const tiles = [];
 
