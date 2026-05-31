@@ -135,6 +135,11 @@
   .tile-detail strong { color: var(--text); font-weight: 500; }
   .skeleton { color: var(--muted-2); }
 
+  /* Live progress bar in the speed-test skeleton tile */
+  .live-bar { height: 3px; background: var(--border); border-radius: 2px; overflow: hidden; margin-top: 10px; }
+  .live-bar-fill { height: 100%; width: 0%; background: linear-gradient(90deg, var(--accent), var(--accent-2)); transition: width 200ms ease-out; }
+  #live-speed-tile { border-color: var(--border-2); }
+
   /* Stats strip */
   .stats { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
   .stat { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px; display: flex; align-items: center; gap: 10px; cursor: pointer; transition: border-color .15s, background .15s; user-select: none; }
@@ -620,22 +625,92 @@ function renderSafety(n) {
 }
 
 function renderSafetySkeleton() {
-  $('safety').innerHTML = Array(6).fill(0).map(() => `
+  // Five plain skeleton tiles + one live-speed tile that the SSE stream updates
+  const blanks = Array(5).fill(0).map(() => `
     <div class="tile">
-      <div class="icon skeleton">⏳</div>
-      <div><div class="label">checking…</div><div class="value skeleton">—</div></div>
+      <div class="tile-head">
+        <div class="icon skeleton">⏳</div>
+        <div class="tile-body"><div class="label">checking…</div><div class="value skeleton">—</div></div>
+      </div>
     </div>`).join('');
+  const live = `
+    <div class="tile" id="live-speed-tile">
+      <div class="tile-head">
+        <div class="icon">⚡</div>
+        <div class="tile-body">
+          <div class="label">Download</div>
+          <div class="value" data-role="value">starting…</div>
+          <div class="sub" data-role="sub">connecting to test server</div>
+        </div>
+      </div>
+      <div class="live-bar"><div class="live-bar-fill" data-role="bar"></div></div>
+    </div>`;
+  $('safety').innerHTML = blanks + live;
+}
+
+let _speedSource = null;
+let _lastSpeed = null;
+const SPEED_TARGET_BYTES = 5_000_000;
+
+function startSpeedStream() {
+  if (_speedSource) { try { _speedSource.close(); } catch {} _speedSource = null; }
+  const src = new EventSource('/api/speed/stream');
+  _speedSource = src;
+  src.onmessage = (e) => {
+    let p;
+    try { p = JSON.parse(e.data); } catch { return; }
+    if (p.done && !p.error) _lastSpeed = p;
+    const tile = $('live-speed-tile');
+    if (!tile) {
+      if (p.done) { src.close(); _speedSource = null; }
+      return;
+    }
+    const val = tile.querySelector('[data-role="value"]');
+    const sub = tile.querySelector('[data-role="sub"]');
+    const bar = tile.querySelector('[data-role="bar"]');
+    if (p.error) {
+      val.textContent = 'Test failed';
+      sub.textContent = p.error;
+      bar.style.width = '0%';
+      src.close(); _speedSource = null;
+      return;
+    }
+    val.textContent = `${p.down_mbps} Mbps`;
+    sub.textContent = `${(p.bytes/1e6).toFixed(1)} MB · ${p.elapsed_s}s · ${p.endpoint}`;
+    const pct = Math.min(100, Math.round((p.bytes / SPEED_TARGET_BYTES) * 100));
+    bar.style.width = pct + '%';
+    if (p.done) { src.close(); _speedSource = null; }
+  };
+  src.onerror = () => {
+    src.close(); _speedSource = null;
+  };
 }
 
 async function refreshSafety() {
   $('safety-btn').disabled = true;
+  _lastSpeed = null;
   renderSafetySkeleton();
+  // Run the live speed stream in parallel with the safety check, so the
+  // Download tile shows progress instead of an idle skeleton for ~5s.
+  let streaming = false;
   try {
-    const n = await api('/api/network/check');
+    const settings = await api('/api/settings');
+    if (settings.speed_test_enabled) {
+      streaming = true;
+      startSpeedStream();
+    }
+  } catch {}
+  try {
+    // When streaming, tell the safety check to skip its own duplicate speed
+    // run — we'll merge the stream's final value into the response below.
+    const url = '/api/network/check' + (streaming ? '?live_speed=true' : '');
+    const n = await api(url);
+    if (streaming && _lastSpeed) n.speed = _lastSpeed;
     renderSafety(n);
   } catch (e) {
     $('safety').innerHTML = `<div class="empty">Safety check failed: ${e.message}</div>`;
   } finally {
+    if (_speedSource) { try { _speedSource.close(); } catch {} _speedSource = null; }
     $('safety-btn').disabled = false;
   }
 }

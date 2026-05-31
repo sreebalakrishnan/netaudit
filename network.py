@@ -199,6 +199,57 @@ SPEED_ENDPOINTS = [
 ]
 
 
+def speed_test_stream(bytes_to_download: int = 5_000_000, chunk_size: int = 65536):
+    """Generator: yield progress dicts as bytes are downloaded.
+
+    Last yielded dict has done=True (or error key if all endpoints failed).
+    Throttles progress events to one every ~150ms so SSE doesn't flood.
+    """
+    headers = {"User-Agent": "NetAudit/0.9 (network audit)"}
+    last_err = None
+    for tmpl in SPEED_ENDPOINTS:
+        url = tmpl.format(n=bytes_to_download)
+        endpoint_host = url.split("/")[2]
+        try:
+            req = urllib.request.Request(url, headers=headers)
+            start = time.monotonic()
+            total = 0
+            last_emit = start
+            with urllib.request.urlopen(req, timeout=15) as r:
+                while True:
+                    chunk = r.read(chunk_size)
+                    if not chunk:
+                        break
+                    total += len(chunk)
+                    now = time.monotonic()
+                    elapsed = now - start
+                    if now - last_emit >= 0.15:
+                        last_emit = now
+                        yield {
+                            "bytes": total,
+                            "elapsed_s": round(elapsed, 2),
+                            "down_mbps": round((total * 8) / 1_000_000 / elapsed, 1) if elapsed > 0.001 else 0,
+                            "endpoint": endpoint_host,
+                            "done": False,
+                        }
+                    if total >= bytes_to_download * 2:
+                        break
+            elapsed = time.monotonic() - start
+            if elapsed > 0.001 and total > 0:
+                yield {
+                    "bytes": total,
+                    "elapsed_s": round(elapsed, 2),
+                    "down_mbps": round((total * 8) / 1_000_000 / elapsed, 1),
+                    "endpoint": endpoint_host,
+                    "done": True,
+                }
+                return
+        except Exception as e:
+            last_err = str(e)
+            continue
+    yield {"error": last_err or "all endpoints failed", "done": True}
+
+
 def speed_test(bytes_to_download: int = 5_000_000) -> dict:
     """Try each speed-test endpoint until one works. Report down Mbps."""
     headers = {"User-Agent": "NetAudit/0.3 (network audit)"}

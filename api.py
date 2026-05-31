@@ -2,8 +2,10 @@ import sys
 import threading
 from pathlib import Path
 
+import json as _json
+
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from starlette.requests import Request
 
@@ -72,9 +74,34 @@ def list_scans():
 
 
 @app.get("/api/network/check")
-def network_check():
+def network_check(live_speed: bool = False):
+    """Run all safety probes.
+
+    When the UI is showing live speed via /api/speed/stream, it passes
+    live_speed=true so we skip the duplicate speed test here — the UI
+    merges the stream's final value into the response client-side.
+    """
     s = user_settings.load()
-    return network.run_all(speed_test_enabled=s["speed_test_enabled"])
+    enabled = s["speed_test_enabled"] and not live_speed
+    return network.run_all(speed_test_enabled=enabled)
+
+
+@app.get("/api/speed/stream")
+def speed_stream():
+    """Server-Sent Events stream of speed-test progress.
+
+    Emits a `progress` event roughly every 150ms during the download, then
+    a final event with `done: true` (or `error`). UI consumes via EventSource
+    so the Download tile updates live instead of waiting ~5s for a final value.
+    """
+    def gen():
+        for progress in network.speed_test_stream(5_000_000):
+            yield f"data: {_json.dumps(progress)}\n\n".encode()
+    return StreamingResponse(
+        gen(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @app.get("/api/settings")
