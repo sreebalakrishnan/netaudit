@@ -119,6 +119,7 @@ def _merge_signals(*sources: dict[str, Signals]) -> dict[str, Signals]:
             cur.ssdp_servers |= sig.ssdp_servers
             cur.open_ports |= sig.open_ports
             cur.http_titles |= sig.http_titles
+            cur.apple_models |= sig.apple_models
     return merged
 
 
@@ -187,5 +188,6 @@ def scan(subnet: str = "auto") -> tuple[str, list[dict]]:
             "open_ports": sorted(sig.open_ports),
             "ssdp": sorted(sig.ssdp_servers)[:3],
             "http_titles": sorted(sig.http_titles),
+            "apple_models": sorted(sig.apple_models),
         })
     return str(network), devices

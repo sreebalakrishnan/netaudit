@@ -383,6 +383,7 @@ function renderGrid(devices) {
       <div class="card-detail">
         <div class="row"><strong>Services:</strong> ${allSvc}</div>
         <div class="row"><strong>Ports:</strong> ${allPorts}</div>
+        ${(d.apple_models || []).length ? `<div class="row"><strong>Apple model:</strong> ${(d.apple_models || []).join(', ')}</div>` : ''}
         ${(d.http_titles || []).map(t => `<div class="row"><strong>HTTP title:</strong> ${t}</div>`).join('')}
         ${ssdpLines}
         ${d.vendor && d.vendor !== d.brand ? `<div class="row"><strong>OUI vendor:</strong> ${d.vendor}</div>` : ''}

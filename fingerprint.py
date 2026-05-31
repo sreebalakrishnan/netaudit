@@ -13,6 +13,15 @@ import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 
+# Apple TXT model identifier prefixes — used to disambiguate iPhone vs iPad,
+# Mac vs Apple TV vs HomePod when mDNS TXT records expose hardware model.
+APPLE_MODEL_PREFIXES = (
+    "iPhone", "iPad", "iPod",
+    "MacBook", "MacBookPro", "MacBookAir",
+    "Macmini", "MacPro", "iMac", "Mac",
+    "AppleTV", "AudioAccessory", "Watch",
+)
+
 # Service types we care about (mDNS / DNS-SD)
 MDNS_SERVICES = [
     "_apple-mobdev2._tcp.local.",
@@ -59,6 +68,7 @@ class Signals:
     ssdp_servers: set[str] = field(default_factory=set)
     open_ports: set[int] = field(default_factory=set)
     http_titles: set[str] = field(default_factory=set)
+    apple_models: set[str] = field(default_factory=set)
 
 
 # ---------- mDNS ----------
@@ -87,11 +97,27 @@ def discover_mdns(timeout: float = 5.0) -> dict[str, Signals]:
                 .replace("._udp", "-udp")
                 .lstrip("_")
             )
+            # Apple devices announce their hardware model in TXT records.
+            # Common keys: "model" (AirPlay/AppleTV/HomePod, also iPhones/iPads in some
+            # services), "am" (RAOP audio model), "md" (HomeKit metadata).
+            apple_models: set[str] = set()
+            if info.properties:
+                for key in (b"model", b"am", b"md"):
+                    raw = info.properties.get(key)
+                    if not raw:
+                        continue
+                    try:
+                        val = raw.decode("utf-8", errors="ignore").strip()
+                    except Exception:
+                        continue
+                    if val and any(val.startswith(p) for p in APPLE_MODEL_PREFIXES):
+                        apple_models.add(val)
             for addr in info.parsed_addresses():
                 if ":" in addr:
                     continue
                 sig = results.setdefault(addr, Signals())
                 sig.services.add(short_type)
+                sig.apple_models |= apple_models
                 if info.server:
                     sig.mdns_hostnames.add(info.server.rstrip("."))
 
@@ -284,6 +310,37 @@ def classify(
         elif _has_any(servers, ["tp-link"]): brand = "TP-Link"
         elif _has_any(servers, ["unifi", "ubiquiti"]): brand = "Ubiquiti"
         return _result("router", brand, "Router", "high")
+
+    # ---- Apple hardware model identifier (most specific signal) ----
+    # When mDNS TXT records expose the device model (e.g. "iPhone15,2",
+    # "AppleTV14,1", "AudioAccessory6,1") we can give an exact label.
+    for model in signals.apple_models:
+        if model.startswith("iPhone"):
+            return _result("phone", "Apple", "iPhone", "high")
+        if model.startswith("iPad"):
+            return _result("tablet", "Apple", "iPad", "high")
+        if model.startswith("iPod"):
+            return _result("phone", "Apple", "iPod touch", "high")
+        if model.startswith("AppleTV"):
+            return _result("tv", "Apple", "Apple TV", "high")
+        if model.startswith("AudioAccessory"):
+            return _result("speaker", "Apple", "HomePod", "high")
+        if model.startswith("MacBookPro"):
+            return _result("computer", "Apple", "MacBook Pro", "high")
+        if model.startswith("MacBookAir"):
+            return _result("computer", "Apple", "MacBook Air", "high")
+        if model.startswith("MacBook"):
+            return _result("computer", "Apple", "MacBook", "high")
+        if model.startswith("Macmini"):
+            return _result("computer", "Apple", "Mac mini", "high")
+        if model.startswith("MacPro"):
+            return _result("computer", "Apple", "Mac Pro", "high")
+        if model.startswith("iMac"):
+            return _result("computer", "Apple", "iMac", "high")
+        if model.startswith("Mac"):  # MacBook* covered above; this catches "Mac15,*" Studio etc.
+            return _result("computer", "Apple", "Mac", "high")
+        if model.startswith("Watch"):
+            return _result("phone", "Apple", "Apple Watch", "high")
 
     # ---- iPhone / iPad (definitive mDNS signal) ----
     if "apple-mobdev2-tcp" in services:
