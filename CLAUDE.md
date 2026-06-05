@@ -8,7 +8,7 @@ A native macOS app for **café-Wi-Fi safety preflight**: walk in, look at the me
 
 Not a power-user network admin tool. The differentiation from Fing / iNet / NetSpot is the single-verdict plain-English UX.
 
-## Current state (v0.9.0)
+## Current state (v0.9.1)
 
 Working, shipped, runs as a real Mac app:
 
