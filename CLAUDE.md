@@ -8,7 +8,7 @@ A native macOS app for **café-Wi-Fi safety preflight**: walk in, look at the me
 
 Not a power-user network admin tool. The differentiation from Fing / iNet / NetSpot is the single-verdict plain-English UX.
 
-## Current state (v0.8.0)
+## Current state (v0.9.0)
 
 Working, shipped, runs as a real Mac app:
 
@@ -17,6 +17,7 @@ Working, shipped, runs as a real Mac app:
 - Safety check: Wi-Fi encryption, captive portal, DNS classification, public IP+geo, latency+jitter, speed test, ARP-spoof check, traceroute hops, VPN detection, Apple Private Relay availability
 - Device scan: mDNS + SSDP + HTTP `<title>` probe + port profiling + mesh-node OUI matching
 - Verdict synthesis: rolls all signals into one plain-English headline at the top of the page
+- Personal-hotspot detection (`hotspot.py`): iOS (172.20.10.1 //28) / Android tethering / phone-OUI → a **trusted** verdict state that skips the public-Wi-Fi rules (no more red false-positive on your own hotspot). "Trust this network" persists by gateway MAC; real hazards still surface
 - Settings modal (Cmd+,): theme (dark/light/system), scan subnet, refresh interval, speed test on/off, reports folder
 - Save Report → JSON snapshot at `~/.netaudit/reports/`
 - DMG installer (`./build.sh`) + one-line installer (`install.sh`)
@@ -37,8 +38,9 @@ NetAudit.app/Contents/MacOS/NetAudit
 | `api.py` | FastAPI routes (`/`, `/api/scan`, `/api/network/check`, `/api/settings`, `/api/report`, `/api/quit`) |
 | `scanner.py` | LAN device discovery — ping sweep, ARP read, hostname resolve, vendor lookup, fingerprint orchestration |
 | `fingerprint.py` | mDNS browsing, SSDP M-SEARCH, port probe, HTTP `<title>`+server probe, classifier rules, gateway detection |
-| `network.py` | Safety probes — Wi-Fi, gateway, DNS, public IP, captive portal, latency, speed, traceroute, VPN, Private Relay, ARP anomaly, verdict synthesis |
-| `db.py` | SQLite at `~/.netaudit/network_audit.db` (scans + devices tables) |
+| `network.py` | Safety probes — Wi-Fi, gateway, DNS, public IP, captive portal, latency, speed, traceroute, VPN, Private Relay, ARP anomaly, verdict synthesis (incl. trusted-network path) |
+| `hotspot.py` | Personal-hotspot fingerprinting (route/ifconfig/arp/system_profiler) → confidence + evidence; stdlib-only, unit-tested (`test_hotspot.py`) |
+| `db.py` | SQLite at `~/.netaudit/network_audit.db` (scans + devices + network_visits, incl. per-network `trusted` flag) |
 | `settings.py` | User prefs at `~/.netaudit/config.json` (load/update/validate) |
 | `config.py` | Env-var config (API_HOST, API_PORT, SCAN_SUBNET) — defaults overridable via `.env` |
 | `netaudit_launcher.py` | Entry point. Starts uvicorn in a thread, sets up NSMenu, runs rumps app, opens WKWebView window |
