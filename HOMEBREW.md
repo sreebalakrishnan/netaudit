@@ -71,19 +71,23 @@ That's it. Anyone can now `brew install sreebalakrishnan/netaudit/netaudit`.
 ## Per-release flow
 
 ```bash
-# 1. In this repo: rebuild bundle + DMG + auto-update the cask formula.
+# 1. Bump the version in setup.py (CFBundleVersion + CFBundleShortVersionString),
+#    then rebuild bundle + DMG + auto-update the cask formula.
 cd /Users/sreeb/Developer/netaudit
-./build.sh                 # writes homebrew/Casks/netaudit.rb with new sha256
+./build.sh                 # writes homebrew/Casks/netaudit.rb with new version + sha256
 
-# 2. Upload the DMG to netaudit.sreeb.dev (Hostinger).
-#    The cask URL points at https://netaudit.sreeb.dev/NetAudit-X.Y.Z.dmg
-#    so the file name has to match the version.
+# 2. Cut a GitHub Release with the DMG attached under BOTH names: the versioned
+#    one (cask, sha-pinned) and a stable NetAudit.dmg (install.sh latest URL).
+cp NetAudit-X.Y.Z.dmg NetAudit.dmg
+gh release create vX.Y.Z NetAudit-X.Y.Z.dmg NetAudit.dmg --title "NetAudit vX.Y.Z" --notes "…"
+rm NetAudit.dmg
 
 # 3. Copy the updated cask formula into the tap repo, commit, push.
+#    (The cask must NOT have a `verified:` param — brew audit rejects it now that
+#     the url + homepage domains both = github.com.)
 cp homebrew/Casks/netaudit.rb /Users/sreeb/Developer/homebrew-netaudit/Casks/
 cd /Users/sreeb/Developer/homebrew-netaudit
-git commit -am "netaudit X.Y.Z"
-git push
+git commit -am "netaudit X.Y.Z" && git push
 
 # 4. Brew users get the update on `brew upgrade --cask netaudit`.
 ```
