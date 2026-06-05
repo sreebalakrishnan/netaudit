@@ -57,7 +57,7 @@ ok "dist/NetAudit.app ($(du -sh dist/NetAudit.app | cut -f1))"
 
 # 4. Deep ad-hoc sign
 bold "4/5 Deep ad-hoc signing…"
-codesign --force --deep --sign - dist/NetAudit.app 2>&1 | head -1
+codesign --force --deep --sign - dist/NetAudit.app 2>&1 | sed -n '1p'
 codesign --verify --deep --strict dist/NetAudit.app 2>&1 | tail -1 || true
 ok "Signed (ad-hoc — Gatekeeper will still warn until notarized)"
 
