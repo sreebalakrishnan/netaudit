@@ -115,6 +115,20 @@ def list_networks():
     return {"networks": db.list_visits()}
 
 
+@app.post("/api/networks/trust")
+async def trust_network(request: Request):
+    """Mark a network trusted/untrusted by gateway MAC, so it's never re-flagged.
+
+    Body: {"gateway_mac": "aa:bb:...", "trusted": true, "ssid": "optional"}.
+    """
+    body = await request.json()
+    gw_mac = (body.get("gateway_mac") or "").strip().lower()
+    if not gw_mac:
+        raise HTTPException(400, "gateway_mac required")
+    trusted = bool(body.get("trusted", True))
+    return db.set_trusted(gw_mac, trusted, ssid=body.get("ssid"))
+
+
 @app.get("/api/speed/stream")
 def speed_stream():
     """Server-Sent Events stream of speed-test progress.

@@ -83,6 +83,7 @@
   .report-row input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent); cursor: pointer; margin: 0; }
   .report-row .rdot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted-2); }
   .report-row .rdot.ok { background: var(--accent); }
+  .report-row .rdot.trusted { background: var(--accent-2); }
   .report-row .rdot.warn { background: var(--warn); }
   .report-row .rdot.danger { background: var(--danger); }
   .report-meta { min-width: 0; }
@@ -99,6 +100,7 @@
   .report-detail .timestamp { font-size: 11px; color: var(--muted); font-family: "SF Mono", monospace; }
   .report-detail .verdict-block { margin: 14px 0; padding: 12px 14px; background: var(--panel); border: 1px solid var(--border); border-left: 3px solid var(--muted-2); border-radius: 6px; }
   .report-detail .verdict-block.ok { border-left-color: var(--accent); }
+  .report-detail .verdict-block.trusted { border-left-color: var(--accent-2); }
   .report-detail .verdict-block.warn { border-left-color: var(--warn); }
   .report-detail .verdict-block.danger { border-left-color: var(--danger); }
   .report-detail .verdict-head { font-weight: 600; font-size: 13px; margin-bottom: 6px; }
@@ -136,13 +138,19 @@
   /* Verdict headline */
   .verdict { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 18px 22px; margin-bottom: 12px; border-left: 4px solid var(--muted-2); }
   .verdict.ok { border-left-color: var(--accent); }
+  .verdict.trusted { border-left-color: var(--accent-2); background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 8%, var(--panel)), var(--panel)); }
   .verdict.warn { border-left-color: var(--warn); }
   .verdict.danger { border-left-color: var(--danger); }
   .verdict .head { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
   .verdict .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted-2); }
   .verdict.ok .dot { background: var(--accent); }
+  .verdict.trusted .dot { background: var(--accent-2); }
   .verdict.warn .dot { background: var(--warn); }
   .verdict.danger .dot { background: var(--danger); }
+  .verdict .trust-row { margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--border-2); font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 8px; }
+  .verdict .trust-btn { background: transparent; border: 1px solid var(--border-2); border-radius: 5px; color: var(--muted); font-size: 11px; padding: 4px 10px; cursor: pointer; font-weight: 500; font: inherit; }
+  .verdict .trust-btn:hover { color: var(--text); border-color: var(--muted-2); background: var(--panel-2); }
+  .verdict .trust-btn.is-trusted { color: var(--accent-2); border-color: color-mix(in srgb, var(--accent-2) 50%, transparent); }
   .verdict .headline { font-size: 18px; font-weight: 600; letter-spacing: -0.01em; }
   .verdict .ssid { font-size: 12px; color: var(--muted); margin-left: auto; }
   .verdict ul { margin: 8px 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; }
@@ -522,6 +530,17 @@ function humanAgo(iso) {
   return `${Math.floor(s/86400/30)} months ago`;
 }
 
+async function toggleTrust(gatewayMac, makeTrusted, ssid) {
+  try {
+    await fetch('/api/networks/trust', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ gateway_mac: gatewayMac, trusted: makeTrusted, ssid: ssid || null }),
+    });
+  } catch (e) { /* best-effort */ }
+  refreshSafety();
+}
+
 function renderVerdict(v, visit) {
   const host = $('verdict-host');
   if (!v) { host.innerHTML = ''; return; }
@@ -535,6 +554,25 @@ function renderVerdict(v, visit) {
       visitNote = `<div class="visit-note">👋 First time here.</div>`;
     }
   }
+  // "Trust this network" affordance — persists by gateway MAC, never re-flagged.
+  let trustRow = '';
+  if (visit && visit.gateway_mac) {
+    const isManual = !!visit.trusted;
+    const isAutoHotspot = v.trusted && v.trust_source === 'hotspot';
+    if (isManual) {
+      trustRow = `<div class="trust-row">
+        <button class="trust-btn is-trusted" id="trust-toggle">✓ Trusted</button>
+        <span>You marked this network safe — click to undo.</span></div>`;
+    } else if (isAutoHotspot) {
+      trustRow = `<div class="trust-row">
+        <button class="trust-btn" id="trust-toggle">📌 Always trust this network</button>
+        <span>Recognized as your own device automatically.</span></div>`;
+    } else {
+      trustRow = `<div class="trust-row">
+        <button class="trust-btn" id="trust-toggle">Trust this network</button>
+        <span>Mark as safe (e.g. your hotspot) so it's never flagged.</span></div>`;
+    }
+  }
   host.innerHTML = `<div class="verdict ${v.severity}">
     <div class="head">
       <div class="dot"></div>
@@ -542,8 +580,13 @@ function renderVerdict(v, visit) {
       ${v.ssid ? `<div class="ssid">on "${v.ssid}"</div>` : ''}
     </div>
     <ul>${lis}</ul>
+    ${trustRow}
     ${visitNote}
   </div>`;
+  const tbtn = $('trust-toggle');
+  if (tbtn && visit && visit.gateway_mac) {
+    tbtn.onclick = () => toggleTrust(visit.gateway_mac, !visit.trusted, visit.ssid);
+  }
 }
 
 function detailRow(label, value) {

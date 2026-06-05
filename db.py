@@ -41,7 +41,8 @@ CREATE TABLE IF NOT EXISTS network_visits (
     last_seen TEXT NOT NULL,
     visit_count INTEGER NOT NULL DEFAULT 1,
     last_verdict_severity TEXT,
-    last_verdict_headline TEXT
+    last_verdict_headline TEXT,
+    trusted INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE INDEX IF NOT EXISTS idx_devices_scan ON devices(scan_id);
@@ -71,6 +72,10 @@ def init():
         for col, typ in _NEW_COLUMNS:
             if col not in existing:
                 con.execute(f"ALTER TABLE devices ADD COLUMN {col} {typ}")
+        # `trusted` added to network_visits after the table shipped — idempotent ALTER
+        visit_cols = {r["name"] for r in con.execute("PRAGMA table_info(network_visits)").fetchall()}
+        if "trusted" not in visit_cols:
+            con.execute("ALTER TABLE network_visits ADD COLUMN trusted INTEGER NOT NULL DEFAULT 0")
 
 
 @contextmanager
@@ -157,12 +162,13 @@ def record_visit(
     now = _now()
     with connect() as con:
         row = con.execute(
-            "SELECT visit_count, first_seen FROM network_visits WHERE gateway_mac = ?",
+            "SELECT visit_count, first_seen, trusted FROM network_visits WHERE gateway_mac = ?",
             (gateway_mac,),
         ).fetchone()
         if row:
             count = row["visit_count"] + 1
             first_seen = row["first_seen"]
+            trusted = bool(row["trusted"])
             con.execute(
                 """UPDATE network_visits
                    SET ssid = ?, last_seen = ?, visit_count = ?,
@@ -173,6 +179,7 @@ def record_visit(
         else:
             count = 1
             first_seen = now
+            trusted = False
             con.execute(
                 """INSERT INTO network_visits
                    (gateway_mac, ssid, first_seen, last_seen, visit_count,
@@ -189,7 +196,49 @@ def record_visit(
         "visit_count": count,
         "last_verdict_severity": verdict_severity,
         "last_verdict_headline": verdict_headline,
+        "trusted": trusted,
     }
+
+
+def get_visit(gateway_mac: str) -> dict | None:
+    with connect() as con:
+        row = con.execute(
+            "SELECT * FROM network_visits WHERE gateway_mac = ?", (gateway_mac,)
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def is_trusted(gateway_mac: str | None) -> bool:
+    """Has the user manually marked this network (by gateway MAC) as trusted?"""
+    if not gateway_mac:
+        return False
+    with connect() as con:
+        row = con.execute(
+            "SELECT trusted FROM network_visits WHERE gateway_mac = ?", (gateway_mac,)
+        ).fetchone()
+        return bool(row["trusted"]) if row else False
+
+
+def set_trusted(gateway_mac: str, trusted: bool, ssid: str | None = None) -> dict:
+    """Mark a network trusted/untrusted, keyed by gateway MAC. Upserts if unseen."""
+    now = _now()
+    with connect() as con:
+        row = con.execute(
+            "SELECT gateway_mac FROM network_visits WHERE gateway_mac = ?", (gateway_mac,)
+        ).fetchone()
+        if row:
+            con.execute(
+                "UPDATE network_visits SET trusted = ? WHERE gateway_mac = ?",
+                (1 if trusted else 0, gateway_mac),
+            )
+        else:
+            con.execute(
+                """INSERT INTO network_visits
+                   (gateway_mac, ssid, first_seen, last_seen, visit_count, trusted)
+                   VALUES (?, ?, ?, ?, 1, ?)""",
+                (gateway_mac, ssid, now, now, 1 if trusted else 0),
+            )
+    return get_visit(gateway_mac) or {"gateway_mac": gateway_mac, "trusted": trusted}
 
 
 def list_visits(limit: int = 30) -> list[dict]:

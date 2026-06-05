@@ -36,7 +36,7 @@ from WebKit import WKWebView, WKWebViewConfiguration
 
 from config import API_HOST, API_PORT
 
-SEVERITY_ICONS = {"ok": "🟢", "warn": "🟡", "danger": "🔴"}
+SEVERITY_ICONS = {"trusted": "🟢", "ok": "🟢", "warn": "🟡", "danger": "🔴"}
 POLL_TIMEOUT_SECONDS = 30
 POLL_INTERVAL_FALLBACK = 120  # used only if settings unreadable
 

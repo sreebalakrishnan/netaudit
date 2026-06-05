@@ -14,6 +14,8 @@ import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from urllib.error import URLError
 
+import db  # manual "trust this network" lookups, keyed by gateway MAC
+import hotspot  # personal-hotspot fingerprinting → trusted networks
 import scanner  # for read_arp_table
 
 
@@ -395,12 +397,94 @@ def arp_anomalies(arp_table: dict[str, str], gateway: str | None) -> dict:
 
 # ---------- Verdict ----------
 
+def _trusted_dangers(data: dict) -> list[str]:
+    """Real danger signals we still surface even on a trusted network.
+
+    We suppress the *public-Wi-Fi* heuristics on a hotspot (rogue-AP MAC check,
+    weak-encryption nags, "you don't control this network"), but genuine hazards
+    — an actually open network, a DNS resolver that could be redirecting you —
+    must still come through, reframed for the hotspot context.
+    """
+    out: list[str] = []
+    enc = ((data.get("wifi") or {}).get("encryption") or "").lower()
+    if enc and ("open" in enc or "none" in enc):
+        out.append("This network has no Wi-Fi password — anyone nearby could join. "
+                   "If it's your hotspot, turn the password on in your phone's settings.")
+    dns = (data.get("dns") or {}).get("classification") or {}
+    if dns.get("status") in ("private-other", "external"):
+        out.append("DNS is going somewhere unexpected — could be redirecting your traffic. "
+                   "Verify before signing into anything sensitive.")
+    return out
+
+
+def _summarize_trusted(data: dict, hs, manual: bool) -> dict:
+    """Verdict for a trusted network (personal hotspot, or user-trusted).
+
+    Neutral/green TRUSTED state. Skips the public-Wi-Fi rules; shows the
+    evidence for why it's trusted; keeps the device count informational. Real
+    dangers (see _trusted_dangers) are still surfaced and bump severity to red.
+    """
+    kind = getattr(hs, "kind", None)
+    if kind is hotspot.HotspotKind.APPLE:
+        headline = "Personal Hotspot — your own device"
+    elif kind is hotspot.HotspotKind.ANDROID:
+        headline = "Phone hotspot — your own device"
+    elif hs is not None and hs.is_trusted:
+        headline = "Personal hotspot — your own device"
+    else:
+        headline = "Trusted network — you marked this one safe"
+
+    sentences: list[str] = []
+    if hs is not None and hs.evidence and not manual:
+        # Lead with the strongest piece of evidence, in plain English.
+        sentences.append("This is your own device: " + hs.evidence[0] + ".")
+    elif manual:
+        sentences.append("You've marked this network as trusted, so the public-Wi-Fi "
+                         "warnings are turned off here.")
+
+    # Device count — informational, not a concern, on your own network.
+    n = data.get("device_count")
+    if n is not None:
+        if n <= 1:
+            sentences.append("Only your devices should be here — none other seen.")
+        else:
+            sentences.append(f"Only your devices should be here — {n} seen.")
+
+    dangers = _trusted_dangers(data)
+    if dangers:
+        severity = "danger"
+        headline = headline + " — but something looks off"
+        sentences = dangers + sentences
+    else:
+        severity = "trusted"
+
+    ssid = (data.get("wifi") or {}).get("ssid")
+    if ssid in (None, "", "<redacted>"):
+        ssid = hs.ssid if hs is not None else None
+
+    return {
+        "severity": severity,
+        "headline": headline,
+        "sentences": sentences[:5],
+        "ssid": ssid,
+        "trusted": True,
+        "hotspot": hs.as_dict() if hs is not None else None,
+        "trust_source": "manual" if manual else "hotspot",
+    }
+
+
 def summarize(data: dict) -> dict:
     """Roll the raw safety signals into a plain-English verdict.
 
     Returns {severity, headline, sentences, ssid} — UI shows this as a
-    big headline tile above the technical signal tiles.
+    big headline tile above the technical signal tiles. When the network is a
+    personal hotspot or user-trusted, returns a TRUSTED verdict instead.
     """
+    hs = data.get("hotspot")
+    manual = bool(data.get("manual_trusted"))
+    if manual or (hs is not None and hs.is_trusted):
+        return _summarize_trusted(data, hs, manual)
+
     danger: list[str] = []
     warn: list[str] = []
     good: list[str] = []
@@ -556,6 +640,12 @@ def run_all(speed_test_enabled: bool = True) -> dict:
         time.sleep(0.3)
         arp_table = scanner.read_arp_table()
 
+    # Is this a trusted network? Personal hotspot (auto) or user-marked (manual).
+    # Decide first — a trusted verdict skips the public-Wi-Fi rules below.
+    hs = hotspot.detect_hotspot()
+    gw_mac = arp_table.get(gateway) if gateway else None
+    manual_trusted = db.is_trusted(gw_mac)
+
     result = {
         "wifi": wifi,
         "gateway": gateway,
@@ -571,6 +661,12 @@ def run_all(speed_test_enabled: bool = True) -> dict:
         "hops": hops,
         "vpn": vpn,
         "private_relay": relay,
+        # Extras consumed by summarize(); hotspot stays an object until after.
+        "hotspot": hs,
+        "manual_trusted": manual_trusted,
+        "device_count": len(arp_table),
     }
     result["verdict"] = summarize(result)
+    # Make hotspot JSON-serializable for the API/report now that summarize is done.
+    result["hotspot"] = hs.as_dict()
     return result
