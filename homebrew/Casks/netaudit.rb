@@ -2,8 +2,7 @@ cask "netaudit" do
   version "0.9.0"
   sha256 "b756918ba7fa002c58c600009c906f9c7586462dab2fac05c71a28bcf829af96"
 
-  url "https://github.com/sreebalakrishnan/netaudit/releases/download/v#{version}/NetAudit-#{version}.dmg",
-      verified: "github.com/sreebalakrishnan/netaudit/"
+  url "https://github.com/sreebalakrishnan/netaudit/releases/download/v#{version}/NetAudit-#{version}.dmg"
   name "NetAudit"
   desc "Native macOS network audit — Wi-Fi safety check + LAN device classifier"
   homepage "https://github.com/sreebalakrishnan/netaudit"
