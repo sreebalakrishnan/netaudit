@@ -15,8 +15,9 @@
 # NetAudit.app is in /Applications.
 set -euo pipefail
 
-# Where the DMG lives. Override with NETAUDIT_DMG_URL=... if you mirror it.
-DMG_URL="${NETAUDIT_DMG_URL:-https://netaudit.sreeb.dev/NetAudit.dmg}"
+# Where the DMG lives — the stable-named asset on the latest GitHub Release.
+# Override with NETAUDIT_DMG_URL=... if you mirror it (e.g. netaudit.sreeb.dev).
+DMG_URL="${NETAUDIT_DMG_URL:-https://github.com/sreebalakrishnan/netaudit/releases/latest/download/NetAudit.dmg}"
 
 APP_NAME="NetAudit.app"
 DEST="/Applications/$APP_NAME"

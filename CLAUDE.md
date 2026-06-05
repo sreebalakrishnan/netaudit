@@ -80,9 +80,10 @@ Python 3.12 specifically — py2app 0.28.x doesn't support 3.13+. Install via `b
 
 - **No paid Apple Developer cert.** App is ad-hoc signed (py2app does this automatically on Apple Silicon; `build.sh` does an explicit `codesign --force --deep --sign -` pass too).
 - **Gatekeeper warns on first launch** for direct DMG users. Workarounds in `INSTALL.md` (right-click → Open, or `xattr -dr com.apple.quarantine`).
-- **`install.sh` strips quarantine automatically** — `curl -fsSL https://netaudit.sreeb.dev/install.sh | bash` results in a silent install with no Gatekeeper prompt.
-- **Homebrew cask formula at `homebrew/Casks/netaudit.rb`** auto-updates SHA256 on every `./build.sh`. The tap repo `sreebalakrishnan/homebrew-netaudit` is **not yet created** — see `HOMEBREW.md` for the publish steps.
-- **Hostinger-deployed sibling site at `netaudit.sreeb.dev`** lives in its own repo (`/Users/sreeb/Developer/netaudit.sreeb.dev`, GitHub `sreebalakrishnan/netaudit.sreeb.dev`). DMG + install.sh are committed there at the root so Hostinger serves them at the URLs the cask + installer point at.
+- **The DMG ships as a GitHub Release asset** (switched from Hostinger hosting in v0.9.0). Each version is a tag `vX.Y.Z` with the DMG attached under **two names**: `NetAudit-X.Y.Z.dmg` (versioned, sha-pinned — what the cask points at) and `NetAudit.dmg` (stable — what `install.sh` pulls via `releases/latest/download/`). Cut a release with: `cp NetAudit-X.Y.Z.dmg NetAudit.dmg && gh release create vX.Y.Z NetAudit-X.Y.Z.dmg NetAudit.dmg` (the download URL uses the real filename, so the stable "latest" link needs an actual `NetAudit.dmg` copy, not just a label).
+- **`install.sh` strips quarantine automatically** — `curl -fsSL https://netaudit.sreeb.dev/install.sh | bash` results in a silent install with no Gatekeeper prompt. The script itself is still served from the landing page, but it now downloads the DMG from `github.com/sreebalakrishnan/netaudit/releases/latest`.
+- **Homebrew cask formula at `homebrew/Casks/netaudit.rb`** auto-updates version + SHA256 on every `./build.sh` and points at the GitHub Release download URL. The tap repo `sreebalakrishnan/homebrew-netaudit` is **not yet created** — see `HOMEBREW.md` for the publish steps.
+- **Hostinger-deployed sibling site at `netaudit.sreeb.dev`** lives in its own repo (`/Users/sreeb/Developer/netaudit.sreeb.dev`, GitHub `sreebalakrishnan/netaudit.sreeb.dev`). It still serves the landing page + `install.sh`, but the DMG is no longer hosted there — it lives on GitHub Releases.
 - **Apple Developer cert + notarization steps documented in `SIGN.md`** for when/if the $99/year is paid.
 
 ## Don't do this
