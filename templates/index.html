@@ -577,7 +577,7 @@ function renderVerdict(v, visit) {
     <div class="head">
       <div class="dot"></div>
       <div class="headline">${v.headline}</div>
-      ${v.ssid ? `<div class="ssid">on "${v.ssid}"</div>` : ''}
+      ${v.ssid && v.ssid.trim() ? `<div class="ssid">on "${v.ssid.trim()}"</div>` : ''}
     </div>
     <ul>${lis}</ul>
     ${trustRow}
@@ -716,12 +716,25 @@ function renderSafety(n) {
 
   // ARP / tampering
   if (n.arp_check) {
-    const sev = n.arp_check.severity === 'warn' ? 'danger' : 'ok';
     const findings = n.arp_check.findings || [];
-    const headline = sev === 'ok' ? 'No tampering' : 'Possible interception';
-    const sub = sev === 'ok' ? 'ARP table looks clean' : findings[0] || '';
+    const isTrusted = !!(n.verdict && n.verdict.trusted);
+    // A real spoof is a MAC bound to multiple IPs; the locally-administered
+    // gateway bit is just a randomized phone MAC — expected on a hotspot.
+    const hasSpoof = findings.some(f => /multiple IPs/i.test(f));
+    const onlyLocalAdmin = !hasSpoof && findings.some(f => /locally-administered/i.test(f));
+    let sev = n.arp_check.severity === 'warn' ? 'danger' : 'ok';
+    let icon, headline, sub;
+    if (isTrusted && onlyLocalAdmin) {
+      sev = 'ok'; icon = '🛡️';
+      headline = 'Normal for a hotspot';
+      sub = 'Your phone uses a randomized Wi-Fi MAC — expected, not tampering';
+    } else if (sev === 'ok') {
+      icon = '🛡️'; headline = 'No tampering'; sub = 'ARP table looks clean';
+    } else {
+      icon = '⚠️'; headline = 'Possible interception'; sub = findings[0] || '';
+    }
     const detail = findings.map(f => `<div class="row">${f}</div>`).join('');
-    tiles.push(tile(sev, sev === 'ok' ? '🛡️' : '⚠️', 'Safety check', headline, sub, null, detail));
+    tiles.push(tile(sev, icon, 'Safety check', headline, sub, null, detail));
   }
 
   // Path / hops

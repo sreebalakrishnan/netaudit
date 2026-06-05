@@ -397,6 +397,21 @@ def arp_anomalies(arp_table: dict[str, str], gateway: str | None) -> dict:
 
 # ---------- Verdict ----------
 
+def _clean_ssid(ssid: str | None) -> str | None:
+    """Normalize an SSID for display: blank, whitespace, or redacted → None.
+
+    macOS redacts the SSID to '<redacted>' without Location access, and
+    system_profiler can momentarily return a whitespace-only name mid-scan —
+    both should render as no-SSID rather than an empty `on ""` in the header.
+    """
+    if not ssid:
+        return None
+    ssid = ssid.strip()
+    if not ssid or ssid == "<redacted>":
+        return None
+    return ssid
+
+
 def _trusted_dangers(data: dict) -> list[str]:
     """Real danger signals we still surface even on a trusted network.
 
@@ -458,9 +473,9 @@ def _summarize_trusted(data: dict, hs, manual: bool) -> dict:
     else:
         severity = "trusted"
 
-    ssid = (data.get("wifi") or {}).get("ssid")
-    if ssid in (None, "", "<redacted>"):
-        ssid = hs.ssid if hs is not None else None
+    ssid = _clean_ssid((data.get("wifi") or {}).get("ssid"))
+    if ssid is None and hs is not None:
+        ssid = _clean_ssid(hs.ssid)
 
     return {
         "severity": severity,
@@ -578,9 +593,7 @@ def summarize(data: dict) -> dict:
 
     # Order: danger > warn > positives — show concerns first
     sentences = danger + warn + good[:3]
-    ssid = wifi.get("ssid")
-    if ssid in (None, "", "<redacted>"):
-        ssid = None
+    ssid = _clean_ssid(wifi.get("ssid"))
 
     return {
         "severity": severity,
