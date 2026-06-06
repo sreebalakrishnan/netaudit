@@ -1,0 +1,5 @@
+# Dev/test-only deps. Install into a SEPARATE venv (venv_dev), never venv_build —
+# py2app bundles whatever is in the build venv, and pytest's presence bloats the
+# app and breaks codesign (liblzma strict-validation). Keep them apart.
+-r requirements.txt
+pytest==8.3.4

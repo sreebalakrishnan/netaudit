@@ -54,6 +54,9 @@ NetAudit.app/Contents/MacOS/NetAudit
 source venv_build/bin/activate
 python netaudit_launcher.py
 
+# Run the tests (use venv_dev — NOT venv_build; see below)
+venv_dev/bin/python -m pytest -q
+
 # Full build: bundle → ad-hoc sign → DMG → auto-update cask SHA
 ./build.sh
 
@@ -66,6 +69,11 @@ curl -sS http://127.0.0.1:8001/api/scan -X POST
 ```
 
 Python 3.12 specifically — py2app 0.28.x doesn't support 3.13+. Install via `brew install python@3.12`.
+
+**Two venvs, deliberately separate:**
+- `venv_build` — packaging only (`requirements.txt`). py2app bundles whatever's installed here, so keep it minimal. **Never `pip install pytest` into it** — it bloats the app and breaks codesign (`liblzma` strict-validation failure).
+- `venv_dev` — development + tests (`requirements-dev.txt` = requirements.txt + pytest). Recreate with:
+  `python3.12 -m venv venv_dev && venv_dev/bin/pip install -r requirements-dev.txt`
 
 ## Key conventions (preserve these — they're hard-won)
 
