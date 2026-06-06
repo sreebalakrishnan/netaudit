@@ -42,7 +42,6 @@ SEVERITY_ICONS = {"trusted": "🟢", "ok": "🟢", "warn": "🟡", "danger": "�
 # Maps a verdict severity → menu-bar glyph state (file stem). Custom glyph
 # replaces the emoji dot; the colour carries the verdict.
 GLYPH_FOR_SEVERITY = {"trusted": "ok", "ok": "ok", "warn": "warn", "danger": "danger"}
-MENUBAR_GLYPH_PT = 18  # displayed point size in the menu bar
 POLL_TIMEOUT_SECONDS = 30
 POLL_INTERVAL_FALLBACK = 120  # used only if settings unreadable
 
@@ -268,9 +267,11 @@ class NetAuditApp(rumps.App):
         def update():
             path = glyph_path_for(severity)
             if path:
+                # rumps.App's status-bar image is the `icon` property (NOT
+                # set_icon — that's a MenuItem method). template stays off so the
+                # verdict colour shows; the glyph's own padding sizes it nicely.
+                self.icon = path
                 self.title = ""  # show only the glyph, no emoji/text
-                self.set_icon(path, dimensions=(MENUBAR_GLYPH_PT, MENUBAR_GLYPH_PT),
-                              template=False)
             else:
                 # No bundled glyph (e.g. dev before first build) — emoji fallback
                 self.icon = None
