@@ -1,6 +1,6 @@
 cask "netaudit" do
-  version "0.9.2"
-  sha256 "ea5997a2f38298867a2963d40d3265505c63dfba80269bf95f22dbf675b4a2b7"
+  version "0.9.3"
+  sha256 "b8bb084f79dd25b7fad65de1fe1d6f59d940d7101e9ee84d6f60629e4f910261"
 
   url "https://github.com/sreebalakrishnan/netaudit/releases/download/v#{version}/NetAudit-#{version}.dmg"
   name "NetAudit"

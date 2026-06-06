@@ -3,10 +3,15 @@
 Build:
     python setup.py py2app
 """
+import glob
+
 from setuptools import setup
 
 APP = ["netaudit_launcher.py"]
-DATA_FILES = [("templates", ["templates/index.html"])]
+DATA_FILES = [
+    ("templates", ["templates/index.html"]),
+    ("menubar", sorted(glob.glob("assets/menubar/menubar_*.png"))),
+]
 OPTIONS = {
     "argv_emulation": False,
     "strip": True,
@@ -15,8 +20,8 @@ OPTIONS = {
         "CFBundleName": "NetAudit",
         "CFBundleDisplayName": "NetAudit",
         "CFBundleIdentifier": "dev.sreeb.netaudit",
-        "CFBundleVersion": "0.9.2",
-        "CFBundleShortVersionString": "0.9.2",
+        "CFBundleVersion": "0.9.3",
+        "CFBundleShortVersionString": "0.9.3",
         "LSMinimumSystemVersion": "11.0",
         "NSHighResolutionCapable": True,
         "LSApplicationCategoryType": "public.app-category.utilities",

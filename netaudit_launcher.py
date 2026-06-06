@@ -11,11 +11,13 @@ Architecture:
 from __future__ import annotations
 
 import json
+import os
 import socket
 import sys
 import threading
 import time
 import urllib.request
+from pathlib import Path
 
 import rumps
 import uvicorn
@@ -36,9 +38,26 @@ from WebKit import WKWebView, WKWebViewConfiguration
 
 from config import API_HOST, API_PORT
 
-SEVERITY_ICONS = {"trusted": "🟢", "ok": "🟢", "warn": "🟡", "danger": "🔴"}
+SEVERITY_ICONS = {"trusted": "🟢", "ok": "🟢", "warn": "🟡", "danger": "🔴"}  # emoji fallback
+# Maps a verdict severity → menu-bar glyph state (file stem). Custom glyph
+# replaces the emoji dot; the colour carries the verdict.
+GLYPH_FOR_SEVERITY = {"trusted": "ok", "ok": "ok", "warn": "warn", "danger": "danger"}
+MENUBAR_GLYPH_PT = 18  # displayed point size in the menu bar
 POLL_TIMEOUT_SECONDS = 30
 POLL_INTERVAL_FALLBACK = 120  # used only if settings unreadable
+
+
+def menubar_glyph_dir() -> Path:
+    """Locate the bundled menu-bar glyphs in dev AND inside the py2app bundle."""
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent.parent / "Resources" / "menubar"
+    return Path(__file__).resolve().parent / "assets" / "menubar"
+
+
+def glyph_path_for(severity: str | None) -> str | None:
+    stem = GLYPH_FOR_SEVERITY.get(severity, "unknown")
+    p = menubar_glyph_dir() / f"menubar_{stem}.png"
+    return str(p) if p.exists() else None
 
 
 def find_free_port(host: str, preferred: int, attempts: int = 10) -> int:
@@ -137,6 +156,8 @@ class NetAuditApp(rumps.App):
             rumps.MenuItem("Quit NetAudit", callback=rumps.quit_application, key="q"),
         ]
 
+        # Show the neutral "checking" glyph immediately (avoids an emoji flash)
+        self._set_status(None, "Checking network…")
         # Install the standard macOS app menu (gives us Cmd+Q, Cmd+W, Cmd+H)
         callAfter(install_app_menu)
         # Open the main window on launch
@@ -236,17 +257,24 @@ class NetAuditApp(rumps.App):
             ) as r:
                 data = json.loads(r.read())
         except Exception as e:
-            self._set_status("⚪︎", f"Couldn't reach probe: {e}")
+            self._set_status(None, f"Couldn't reach probe: {e}")
             return
         verdict = data.get("verdict") or {}
-        icon = SEVERITY_ICONS.get(verdict.get("severity"), "⚪︎")
         headline = verdict.get("headline") or "Network checked"
-        self._set_status(icon, headline)
+        self._set_status(verdict.get("severity"), headline)
 
-    def _set_status(self, icon: str, headline: str):
+    def _set_status(self, severity: str | None, headline: str):
         # UI updates must hop to the main thread
         def update():
-            self.title = icon
+            path = glyph_path_for(severity)
+            if path:
+                self.title = ""  # show only the glyph, no emoji/text
+                self.set_icon(path, dimensions=(MENUBAR_GLYPH_PT, MENUBAR_GLYPH_PT),
+                              template=False)
+            else:
+                # No bundled glyph (e.g. dev before first build) — emoji fallback
+                self.icon = None
+                self.title = SEVERITY_ICONS.get(severity, "⚪︎")
             self._status_item.title = headline
         callAfter(update)
 

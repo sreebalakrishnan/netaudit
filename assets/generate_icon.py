@@ -21,6 +21,17 @@ TEAL    = (45, 212, 191, 255)    # cooler tail of the arc gradient
 
 ICONSET = Path(__file__).parent / "NetAudit.iconset"
 ICNS = Path(__file__).parent.parent / "NetAudit.icns"
+MENUBAR = Path(__file__).parent / "menubar"
+
+# Menu-bar glyph colours — the verdict carried as colour. Chosen mid-saturation
+# so the Wi-Fi glyph reads on both light and dark menu bars (it's NOT a template
+# image, since template images are monochrome and can't show the status colour).
+MENUBAR_COLORS = {
+    "ok":      (46, 160, 67, 255),    # green  — safe / trusted
+    "warn":    (217, 142, 0, 255),    # amber  — caveats
+    "danger":  (229, 72, 77, 255),    # red    — be careful
+    "unknown": (142, 142, 147, 255),  # gray   — checking / unreachable
+}
 
 
 def _vgrad(size, top, bot):
@@ -101,6 +112,21 @@ def make_base(size: int) -> Image.Image:
     return img.resize((size, size), Image.LANCZOS)
 
 
+def make_menubar_glyph(px: int, color) -> Image.Image:
+    """A small solid-colour Wi-Fi glyph for the menu bar (transparent bg)."""
+    S = px * SS
+    img = Image.new("RGBA", (S, S), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    origin = (S // 2, int(S * 0.78))
+    for i, r in enumerate([int(S * 0.40), int(S * 0.285), int(S * 0.17)]):
+        bbox = (origin[0] - r, origin[1] - r, origin[0] + r, origin[1] + r)
+        width = max(int(S * 0.075 - i * S * 0.006), int(S * 0.05))
+        d.arc(bbox, start=210, end=330, fill=color, width=width)
+    dr = int(S * 0.052)
+    d.ellipse((origin[0] - dr, origin[1] - dr, origin[0] + dr, origin[1] + dr), fill=color)
+    return img.resize((px, px), Image.LANCZOS)
+
+
 def main():
     ICONSET.mkdir(exist_ok=True)
     base = make_base(SIZE)
@@ -123,6 +149,12 @@ def main():
         base.resize((size, size), Image.LANCZOS).save(ICONSET / name)
 
     print(f"✅ Wrote {len(targets) + 1} PNGs to {ICONSET.name}/")
+
+    # Menu-bar glyphs (18pt displayed; rendered at 36px for retina crispness)
+    MENUBAR.mkdir(exist_ok=True)
+    for state, color in MENUBAR_COLORS.items():
+        make_menubar_glyph(36, color).save(MENUBAR / f"menubar_{state}.png")
+    print(f"✅ Wrote {len(MENUBAR_COLORS)} menu-bar glyphs to {MENUBAR.name}/")
 
 
 if __name__ == "__main__":
