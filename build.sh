@@ -53,6 +53,8 @@ ok "Cleaned build/, dist/, *.dmg"
 bold "3/5 Building bundle with py2app…"
 python setup.py py2app 2>&1 | tail -1
 [[ -d dist/NetAudit.app ]] || { echo "✗ py2app didn't produce dist/NetAudit.app"; exit 1; }
+# py2app copies the CLI shim without the exec bit — restore it so `netaudit` runs.
+chmod +x dist/NetAudit.app/Contents/Resources/netaudit 2>/dev/null || true
 ok "dist/NetAudit.app ($(du -sh dist/NetAudit.app | cut -f1))"
 
 # 4. Deep ad-hoc sign

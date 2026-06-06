@@ -1,6 +1,6 @@
 cask "netaudit" do
-  version "0.9.6"
-  sha256 "9078ac72167f9ba5658c610ef6e5ea935ce117ea300bc29ef27a10a3f6de167e"
+  version "0.9.7"
+  sha256 "a22a471366b8acea4d8141f0f865d0422cc54df69e8b0accf9e31130f6af077e"
 
   url "https://github.com/sreebalakrishnan/netaudit/releases/download/v#{version}/NetAudit-#{version}.dmg"
   name "NetAudit"
@@ -13,9 +13,9 @@ cask "netaudit" do
   end
 
   app "NetAudit.app"
-  # `netaudit` terminal command → the app's executable (CLI verdict when run from
-  # a shell; `netaudit gui` opens the menu-bar app).
-  binary "#{appdir}/NetAudit.app/Contents/MacOS/NetAudit", target: "netaudit"
+  # `netaudit` terminal command → a shim script inside the app (a direct symlink
+  # to the py2app executable can't find the bundle; the shim execs it by real path).
+  binary "#{appdir}/NetAudit.app/Contents/Resources/netaudit", target: "netaudit"
 
   # NetAudit ships ad-hoc signed (no paid Apple Developer Program). Strip the
   # quarantine attribute so Gatekeeper stays silent on first launch — this is

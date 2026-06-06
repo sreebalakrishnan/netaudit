@@ -70,7 +70,8 @@ ok "Removing quarantine attribute…"
 xattr -dr com.apple.quarantine "$DEST" 2>/dev/null || true
 
 # --- 6. Symlink the `netaudit` terminal command onto PATH (best-effort) ---
-EXEC="$DEST/Contents/MacOS/NetAudit"
+# Point at the shim in Resources/, NOT the mach-o (py2app can't run via symlink).
+EXEC="$DEST/Contents/Resources/netaudit"
 LINK=""
 for d in /opt/homebrew/bin /usr/local/bin; do
     if [[ -d "$d" && -w "$d" ]]; then

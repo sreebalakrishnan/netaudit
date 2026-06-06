@@ -11,6 +11,7 @@ APP = ["netaudit_launcher.py"]
 DATA_FILES = [
     ("templates", ["templates/index.html"]),
     ("menubar", sorted(glob.glob("assets/menubar/menubar_*.png"))),
+    ("", ["cli/netaudit"]),  # CLI shim → Contents/Resources/netaudit (chmod'd in build.sh)
 ]
 OPTIONS = {
     "argv_emulation": False,
@@ -20,8 +21,8 @@ OPTIONS = {
         "CFBundleName": "NetAudit",
         "CFBundleDisplayName": "NetAudit",
         "CFBundleIdentifier": "dev.sreeb.netaudit",
-        "CFBundleVersion": "0.9.6",
-        "CFBundleShortVersionString": "0.9.6",
+        "CFBundleVersion": "0.9.7",
+        "CFBundleShortVersionString": "0.9.7",
         "LSMinimumSystemVersion": "11.0",
         "NSHighResolutionCapable": True,
         "LSApplicationCategoryType": "public.app-category.utilities",
