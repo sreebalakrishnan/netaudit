@@ -151,6 +151,11 @@
   .verdict .trust-btn { background: transparent; border: 1px solid var(--border-2); border-radius: 5px; color: var(--muted); font-size: 11px; padding: 4px 10px; cursor: pointer; font-weight: 500; font: inherit; }
   .verdict .trust-btn:hover { color: var(--text); border-color: var(--muted-2); background: var(--panel-2); }
   .verdict .trust-btn.is-trusted { color: var(--accent-2); border-color: color-mix(in srgb, var(--accent-2) 50%, transparent); }
+  .verdict .trust-row.trust-mark { flex-wrap: wrap; }
+  .verdict .trust-hint { flex-basis: 100%; }
+  .verdict .trust-tag { color: var(--accent-2); font-weight: 600; }
+  .verdict .trust-name { background: var(--panel-2); border: 1px solid var(--border); border-radius: 5px; padding: 4px 8px; color: var(--text); font: inherit; font-size: 11px; min-width: 150px; }
+  .verdict .trust-name:focus { outline: none; border-color: var(--accent); }
   .verdict .headline { font-size: 18px; font-weight: 600; letter-spacing: -0.01em; }
   .verdict .ssid { font-size: 12px; color: var(--muted); margin-left: auto; }
   .verdict ul { margin: 8px 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; }
@@ -530,15 +535,43 @@ function humanAgo(iso) {
   return `${Math.floor(s/86400/30)} months ago`;
 }
 
-async function toggleTrust(gatewayMac, makeTrusted, ssid) {
+async function setNetworkProfile(gatewayMac, category, label, ssid) {
   try {
     await fetch('/api/networks/trust', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ gateway_mac: gatewayMac, trusted: makeTrusted, ssid: ssid || null }),
+      body: JSON.stringify({
+        gateway_mac: gatewayMac, category: category, label: label || null, ssid: ssid || null,
+      }),
     });
   } catch (e) { /* best-effort */ }
   refreshSafety();
+}
+
+const CATEGORY_TAG = { home: '🏠 Home', office: '🏢 Office', trusted: '✓ Trusted' };
+
+function trustAffordance(v, visit) {
+  if (!visit || !visit.gateway_mac) return '';
+  const cat = visit.category;
+  const label = visit.label || '';
+  if (cat) {
+    const name = label ? ` · ${label}` : '';
+    return `<div class="trust-row">
+      <span class="trust-tag">${CATEGORY_TAG[cat] || '✓ Trusted'}${name}</span>
+      <button class="trust-btn" data-act="forget">Forget</button>
+      <span>This network is marked safe — public-Wi-Fi warnings off.</span></div>`;
+  }
+  const auto = v.trusted && v.trust_source === 'hotspot';
+  const hint = auto ? 'Recognized as your own device — name it to keep it trusted:'
+                    : 'Mark this network so it’s never flagged:';
+  const safeLabel = label.replace(/"/g, '&quot;');
+  return `<div class="trust-row trust-mark">
+    <span class="trust-hint">${hint}</span>
+    <input class="trust-name" type="text" placeholder="Name (e.g. Sripriya)" value="${safeLabel}">
+    <button class="trust-btn" data-cat="home">🏠 Home</button>
+    <button class="trust-btn" data-cat="office">🏢 Office</button>
+    <button class="trust-btn" data-cat="trusted">✓ Trusted</button>
+  </div>`;
 }
 
 function renderVerdict(v, visit) {
@@ -554,25 +587,6 @@ function renderVerdict(v, visit) {
       visitNote = `<div class="visit-note">👋 First time here.</div>`;
     }
   }
-  // "Trust this network" affordance — persists by gateway MAC, never re-flagged.
-  let trustRow = '';
-  if (visit && visit.gateway_mac) {
-    const isManual = !!visit.trusted;
-    const isAutoHotspot = v.trusted && v.trust_source === 'hotspot';
-    if (isManual) {
-      trustRow = `<div class="trust-row">
-        <button class="trust-btn is-trusted" id="trust-toggle">✓ Trusted</button>
-        <span>You marked this network safe — click to undo.</span></div>`;
-    } else if (isAutoHotspot) {
-      trustRow = `<div class="trust-row">
-        <button class="trust-btn" id="trust-toggle">📌 Always trust this network</button>
-        <span>Recognized as your own device automatically.</span></div>`;
-    } else {
-      trustRow = `<div class="trust-row">
-        <button class="trust-btn" id="trust-toggle">Trust this network</button>
-        <span>Mark as safe (e.g. your hotspot) so it's never flagged.</span></div>`;
-    }
-  }
   host.innerHTML = `<div class="verdict ${v.severity}">
     <div class="head">
       <div class="dot"></div>
@@ -580,12 +594,20 @@ function renderVerdict(v, visit) {
       ${v.ssid && v.ssid.trim() ? `<div class="ssid">on "${v.ssid.trim()}"</div>` : ''}
     </div>
     <ul>${lis}</ul>
-    ${trustRow}
+    ${trustAffordance(v, visit)}
     ${visitNote}
   </div>`;
-  const tbtn = $('trust-toggle');
-  if (tbtn && visit && visit.gateway_mac) {
-    tbtn.onclick = () => toggleTrust(visit.gateway_mac, !visit.trusted, visit.ssid);
+  // Wire the trust controls (gateway MAC is the stable key).
+  const row = host.querySelector('.trust-row');
+  if (row && visit && visit.gateway_mac) {
+    const nameInput = row.querySelector('.trust-name');
+    row.querySelectorAll('[data-cat]').forEach(b => {
+      b.onclick = () => setNetworkProfile(
+        visit.gateway_mac, b.dataset.cat, nameInput ? nameInput.value : '', visit.ssid);
+    });
+    const forget = row.querySelector('[data-act="forget"]');
+    if (forget) forget.onclick = () =>
+      setNetworkProfile(visit.gateway_mac, null, '', visit.ssid);
   }
 }
 

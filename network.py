@@ -432,15 +432,30 @@ def _trusted_dangers(data: dict) -> list[str]:
     return out
 
 
-def _summarize_trusted(data: dict, hs, manual: bool) -> dict:
-    """Verdict for a trusted network (personal hotspot, or user-trusted).
+_CATEGORY_HEADLINE = {
+    "home": "Home network",
+    "office": "Office network",
+    "trusted": "Trusted network",
+}
 
-    Neutral/green TRUSTED state. Skips the public-Wi-Fi rules; shows the
-    evidence for why it's trusted; keeps the device count informational. Real
-    dangers (see _trusted_dangers) are still surfaced and bump severity to red.
+
+def _summarize_trusted(data: dict, hs, manual: bool) -> dict:
+    """Verdict for a trusted network (personal hotspot, or user-labeled).
+
+    Neutral/green TRUSTED state. Skips the public-Wi-Fi rules; explains why it's
+    trusted; keeps the device count informational. Real dangers (see
+    _trusted_dangers) are still surfaced and bump severity to red.
     """
+    category = data.get("net_category")
+    label = _clean_ssid(data.get("net_label"))  # reuse blank/whitespace cleanup
     kind = getattr(hs, "kind", None)
-    if kind is hotspot.HotspotKind.APPLE:
+
+    # Headline priority: a user-set category wins; else hotspot; else generic.
+    if category in _CATEGORY_HEADLINE:
+        headline = _CATEGORY_HEADLINE[category]
+        if label:
+            headline += f" — {label}"
+    elif kind is hotspot.HotspotKind.APPLE:
         headline = "Personal Hotspot — your own device"
     elif kind is hotspot.HotspotKind.ANDROID:
         headline = "Phone hotspot — your own device"
@@ -450,8 +465,15 @@ def _summarize_trusted(data: dict, hs, manual: bool) -> dict:
         headline = "Trusted network — you marked this one safe"
 
     sentences: list[str] = []
-    if hs is not None and hs.evidence and not manual:
-        # Lead with the strongest piece of evidence, in plain English.
+    if category == "home":
+        sentences.append("Your home network — public-Wi-Fi warnings are turned off here.")
+    elif category == "office":
+        sentences.append("Your office network — public-Wi-Fi warnings are turned off here.")
+    elif category == "trusted":
+        sentences.append("You've marked this network as trusted, so the public-Wi-Fi "
+                         "warnings are turned off here.")
+    elif hs is not None and hs.evidence:
+        # Lead with the strongest piece of hotspot evidence, in plain English.
         sentences.append("This is your own device: " + hs.evidence[0] + ".")
     elif manual:
         sentences.append("You've marked this network as trusted, so the public-Wi-Fi "
@@ -477,14 +499,23 @@ def _summarize_trusted(data: dict, hs, manual: bool) -> dict:
     if ssid is None and hs is not None:
         ssid = _clean_ssid(hs.ssid)
 
+    if category in _CATEGORY_HEADLINE:
+        trust_source = "category"
+    elif hs is not None and hs.is_trusted:
+        trust_source = "hotspot"
+    else:
+        trust_source = "manual"
+
     return {
         "severity": severity,
         "headline": headline,
         "sentences": sentences[:5],
         "ssid": ssid,
         "trusted": True,
+        "category": category,
+        "label": label,
         "hotspot": hs.as_dict() if hs is not None else None,
-        "trust_source": "manual" if manual else "hotspot",
+        "trust_source": trust_source,
     }
 
 
@@ -657,7 +688,8 @@ def run_all(speed_test_enabled: bool = True) -> dict:
     # Decide first — a trusted verdict skips the public-Wi-Fi rules below.
     hs = hotspot.detect_hotspot()
     gw_mac = arp_table.get(gateway) if gateway else None
-    manual_trusted = db.is_trusted(gw_mac)
+    visit = db.get_visit(gw_mac) if gw_mac else None
+    manual_trusted = bool(visit and visit.get("trusted"))
 
     result = {
         "wifi": wifi,
@@ -677,6 +709,8 @@ def run_all(speed_test_enabled: bool = True) -> dict:
         # Extras consumed by summarize(); hotspot stays an object until after.
         "hotspot": hs,
         "manual_trusted": manual_trusted,
+        "net_category": (visit or {}).get("category"),
+        "net_label": (visit or {}).get("label"),
         "device_count": len(arp_table),
     }
     result["verdict"] = summarize(result)

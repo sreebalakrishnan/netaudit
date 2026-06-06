@@ -42,7 +42,9 @@ CREATE TABLE IF NOT EXISTS network_visits (
     visit_count INTEGER NOT NULL DEFAULT 1,
     last_verdict_severity TEXT,
     last_verdict_headline TEXT,
-    trusted INTEGER NOT NULL DEFAULT 0
+    trusted INTEGER NOT NULL DEFAULT 0,
+    category TEXT,   -- 'home' | 'office' | 'trusted' | NULL
+    label TEXT       -- user-given name (survives macOS SSID redaction)
 );
 
 CREATE INDEX IF NOT EXISTS idx_devices_scan ON devices(scan_id);
@@ -72,10 +74,14 @@ def init():
         for col, typ in _NEW_COLUMNS:
             if col not in existing:
                 con.execute(f"ALTER TABLE devices ADD COLUMN {col} {typ}")
-        # `trusted` added to network_visits after the table shipped — idempotent ALTER
+        # Columns added to network_visits after the table shipped — idempotent ALTERs
         visit_cols = {r["name"] for r in con.execute("PRAGMA table_info(network_visits)").fetchall()}
         if "trusted" not in visit_cols:
             con.execute("ALTER TABLE network_visits ADD COLUMN trusted INTEGER NOT NULL DEFAULT 0")
+        if "category" not in visit_cols:
+            con.execute("ALTER TABLE network_visits ADD COLUMN category TEXT")
+        if "label" not in visit_cols:
+            con.execute("ALTER TABLE network_visits ADD COLUMN label TEXT")
 
 
 @contextmanager
@@ -162,13 +168,16 @@ def record_visit(
     now = _now()
     with connect() as con:
         row = con.execute(
-            "SELECT visit_count, first_seen, trusted FROM network_visits WHERE gateway_mac = ?",
+            "SELECT visit_count, first_seen, trusted, category, label "
+            "FROM network_visits WHERE gateway_mac = ?",
             (gateway_mac,),
         ).fetchone()
         if row:
             count = row["visit_count"] + 1
             first_seen = row["first_seen"]
             trusted = bool(row["trusted"])
+            category = row["category"]
+            label = row["label"]
             con.execute(
                 """UPDATE network_visits
                    SET ssid = ?, last_seen = ?, visit_count = ?,
@@ -180,6 +189,8 @@ def record_visit(
             count = 1
             first_seen = now
             trusted = False
+            category = None
+            label = None
             con.execute(
                 """INSERT INTO network_visits
                    (gateway_mac, ssid, first_seen, last_seen, visit_count,
@@ -197,6 +208,8 @@ def record_visit(
         "last_verdict_severity": verdict_severity,
         "last_verdict_headline": verdict_headline,
         "trusted": trusted,
+        "category": category,
+        "label": label,
     }
 
 
@@ -219,8 +232,27 @@ def is_trusted(gateway_mac: str | None) -> bool:
         return bool(row["trusted"]) if row else False
 
 
-def set_trusted(gateway_mac: str, trusted: bool, ssid: str | None = None) -> dict:
-    """Mark a network trusted/untrusted, keyed by gateway MAC. Upserts if unseen."""
+VALID_CATEGORIES = ("home", "office", "trusted")
+
+
+def set_network_profile(
+    gateway_mac: str,
+    category: str | None,
+    label: str | None = None,
+    ssid: str | None = None,
+) -> dict:
+    """Set a network's profile, keyed by gateway MAC. Upserts if unseen.
+
+    category in {home, office, trusted} marks it trusted; category=None forgets
+    the profile (untrusts + clears the label). `label` is the user's friendly
+    name, which survives macOS SSID redaction.
+    """
+    if category is not None and category not in VALID_CATEGORIES:
+        raise ValueError(f"invalid category {category!r}")
+    trusted = 1 if category else 0
+    label = (label or "").strip() or None
+    if category is None:
+        label = None  # forgetting → drop the name too
     now = _now()
     with connect() as con:
         row = con.execute(
@@ -228,17 +260,19 @@ def set_trusted(gateway_mac: str, trusted: bool, ssid: str | None = None) -> dic
         ).fetchone()
         if row:
             con.execute(
-                "UPDATE network_visits SET trusted = ? WHERE gateway_mac = ?",
-                (1 if trusted else 0, gateway_mac),
+                "UPDATE network_visits SET trusted = ?, category = ?, label = ? "
+                "WHERE gateway_mac = ?",
+                (trusted, category, label, gateway_mac),
             )
         else:
             con.execute(
                 """INSERT INTO network_visits
-                   (gateway_mac, ssid, first_seen, last_seen, visit_count, trusted)
-                   VALUES (?, ?, ?, ?, 1, ?)""",
-                (gateway_mac, ssid, now, now, 1 if trusted else 0),
+                   (gateway_mac, ssid, first_seen, last_seen, visit_count,
+                    trusted, category, label)
+                   VALUES (?, ?, ?, ?, 1, ?, ?, ?)""",
+                (gateway_mac, ssid, now, now, trusted, category, label),
             )
-    return get_visit(gateway_mac) or {"gateway_mac": gateway_mac, "trusted": trusted}
+    return get_visit(gateway_mac) or {"gateway_mac": gateway_mac, "trusted": bool(trusted)}
 
 
 def list_visits(limit: int = 30) -> list[dict]:
