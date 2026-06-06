@@ -69,11 +69,30 @@ cp -R "$MOUNT/$APP_NAME" "/Applications/"
 ok "Removing quarantine attribute…"
 xattr -dr com.apple.quarantine "$DEST" 2>/dev/null || true
 
-# --- 6. Done ---
+# --- 6. Symlink the `netaudit` terminal command onto PATH (best-effort) ---
+EXEC="$DEST/Contents/MacOS/NetAudit"
+LINK=""
+for d in /opt/homebrew/bin /usr/local/bin; do
+    if [[ -d "$d" && -w "$d" ]]; then
+        ln -sf "$EXEC" "$d/netaudit" && LINK="$d/netaudit" && break
+    fi
+done
+if [[ -z "$LINK" ]]; then
+    mkdir -p "$HOME/.local/bin" && ln -sf "$EXEC" "$HOME/.local/bin/netaudit" && LINK="$HOME/.local/bin/netaudit"
+fi
+if [[ -n "$LINK" ]]; then
+    ok "Linked 'netaudit' command → $LINK"
+    case ":$PATH:" in
+        *":$(dirname "$LINK"):"*) : ;;
+        *) warn "$(dirname "$LINK") isn't on your PATH — add it to use 'netaudit' directly." ;;
+    esac
+fi
+
+# --- 7. Done ---
 VERSION=$(/usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "$DEST/Contents/Info.plist" 2>/dev/null || echo "?")
 ok "NetAudit $VERSION installed at $DEST"
 echo
-bold "Launch it with:"
-echo "  open -a NetAudit"
-echo
-bold "Or just hit ⌘Space and type 'NetAudit'."
+bold "Use it:"
+echo "  netaudit          # one-shot safety verdict in the terminal"
+echo "  netaudit gui      # open the menu-bar app + window"
+echo "  open -a NetAudit  # or just launch the app (⌘Space → 'NetAudit')"

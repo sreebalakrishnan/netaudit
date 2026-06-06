@@ -1,6 +1,6 @@
 cask "netaudit" do
-  version "0.9.5"
-  sha256 "194bcff5d9b2dba3be05b214ae27e6d8d5c80e5074b44ab26c277e2878de965b"
+  version "0.9.6"
+  sha256 "9078ac72167f9ba5658c610ef6e5ea935ce117ea300bc29ef27a10a3f6de167e"
 
   url "https://github.com/sreebalakrishnan/netaudit/releases/download/v#{version}/NetAudit-#{version}.dmg"
   name "NetAudit"
@@ -13,6 +13,9 @@ cask "netaudit" do
   end
 
   app "NetAudit.app"
+  # `netaudit` terminal command → the app's executable (CLI verdict when run from
+  # a shell; `netaudit gui` opens the menu-bar app).
+  binary "#{appdir}/NetAudit.app/Contents/MacOS/NetAudit", target: "netaudit"
 
   # NetAudit ships ad-hoc signed (no paid Apple Developer Program). Strip the
   # quarantine attribute so Gatekeeper stays silent on first launch — this is

@@ -280,7 +280,8 @@ class NetAuditApp(rumps.App):
         callAfter(update)
 
 
-def main():
+def run_gui():
+    """Launch the menu-bar app + WKWebView window (the default for a double-click)."""
     port = find_free_port(API_HOST, API_PORT)
     url = f"http://{API_HOST}:{port}"
     print(f"NetAudit starting at {url}", flush=True)
@@ -296,6 +297,89 @@ def main():
         sys.exit(1)
 
     NetAuditApp(url).run()
+
+
+# ---------- CLI (terminal `netaudit`) ----------
+
+_SEV_ANSI = {"trusted": "\033[32m", "ok": "\033[32m", "warn": "\033[33m", "danger": "\033[31m"}
+
+
+def _print_verdict(data: dict):
+    color = sys.stdout.isatty()
+    v = data.get("verdict") or {}
+    sev = v.get("severity", "")
+    c = _SEV_ANSI.get(sev, "") if color else ""
+    rst = "\033[0m" if color and c else ""
+    dim = "\033[2m" if color else ""
+    ssid = f' on "{v["ssid"]}"' if v.get("ssid") else ""
+    print(f"{c}● {v.get('headline', 'Network checked')}{rst}{ssid}")
+    for s in v.get("sentences", []):
+        print(f"  · {s}")
+    # A compact line of the key signals.
+    wifi = (data.get("wifi") or {}).get("encryption") or "?"
+    spd = (data.get("speed") or {}).get("down_mbps")
+    lat = ((data.get("latency") or {}).get("internet") or {}).get("avg_ms")
+    dns = (data.get("dns") or {}).get("classification", {}).get("note") or ""
+    facts = [f"Wi-Fi: {wifi}"]
+    if spd is not None:
+        facts.append(f"↓ {spd} Mbps")
+    if lat is not None:
+        facts.append(f"{round(lat)} ms")
+    print(f"{dim}  {' · '.join(facts)}{rst}")
+    if dns:
+        print(f"{dim}  {dns}{rst}")
+
+
+def run_cli(argv: list[str]) -> int:
+    """`netaudit` / `netaudit verdict` — run the safety check, print to stdout."""
+    as_json = "--json" in argv
+    no_speed = "--no-speed" in argv
+    import db
+    import network
+    db.init()  # CLI doesn't import api, so ensure tables exist
+    try:
+        from settings import load as _load
+        speed = bool(_load().get("speed_test_enabled", True)) and not no_speed
+    except Exception:
+        speed = not no_speed
+    if not as_json:
+        print("Checking the network…", file=sys.stderr, flush=True)
+    data = network.run_all(speed_test_enabled=speed)
+    if as_json:
+        print(json.dumps(data, default=str, indent=2))
+    else:
+        _print_verdict(data)
+    sev = (data.get("verdict") or {}).get("severity")
+    return 1 if sev == "danger" else 0  # non-zero exit on a danger verdict
+
+
+def _print_usage():
+    print(
+        "NetAudit — is this Wi-Fi safe?\n\n"
+        "Usage:\n"
+        "  netaudit            Print a one-shot safety verdict for the current network\n"
+        "  netaudit verdict    Same as above\n"
+        "  netaudit --json     Verdict + all raw signals as JSON\n"
+        "  netaudit --no-speed Skip the speed test (faster)\n"
+        "  netaudit gui        Open the menu-bar app + window\n"
+        "  netaudit help       Show this help\n"
+    )
+
+
+def main():
+    argv = sys.argv[1:]
+    if argv and argv[0] in ("help", "-h", "--help"):
+        _print_usage()
+        return
+    if argv and argv[0] in ("gui", "app"):
+        return run_gui()
+    if argv and argv[0] in ("verdict", "check"):
+        return sys.exit(run_cli(argv[1:]))
+    # No subcommand: a real terminal (tty) wants the CLI verdict; a Finder
+    # double-click (no tty) wants the GUI.
+    if sys.stdout.isatty():
+        return sys.exit(run_cli(argv))
+    return run_gui()
 
 
 if __name__ == "__main__":

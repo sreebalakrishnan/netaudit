@@ -8,7 +8,7 @@ A native macOS app for **café-Wi-Fi safety preflight**: walk in, look at the me
 
 Not a power-user network admin tool. The differentiation from Fing / iNet / NetSpot is the single-verdict plain-English UX.
 
-## Current state (v0.9.5)
+## Current state (v0.9.6)
 
 Working, shipped, runs as a real Mac app:
 
@@ -20,6 +20,7 @@ Working, shipped, runs as a real Mac app:
 - Personal-hotspot detection (`hotspot.py`): iOS (172.20.10.1 //28) / Android tethering / phone-OUI → a **trusted** verdict state that skips the public-Wi-Fi rules (no more red false-positive on your own hotspot). "Trust this network" persists by gateway MAC; real hazards still surface. Networks can also be labeled **Home / Office / Trusted** with a custom name (e.g. "Sripriya") — same trusted path, and the name shows in the verdict even when macOS redacts the SSID
 - Settings modal (Cmd+,): theme (dark/light/system), scan subnet, refresh interval, speed test on/off, reports folder
 - Save Report → JSON snapshot at `~/.netaudit/reports/`
+- `netaudit` CLI: run from a shell for a one-shot terminal verdict (`netaudit`, `--json`, `--no-speed`); `netaudit gui` opens the app. Same py2app executable — `main()` dispatches GUI vs CLI on subcommand / tty. Exposed via the cask `binary` stanza + a symlink in `install.sh`
 - DMG installer (`./build.sh`) + one-line installer (`install.sh`)
 
 ## Architecture
